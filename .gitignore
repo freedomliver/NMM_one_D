@@ -1,0 +1,28 @@
+# ===== 数据文件 =====
+bootstrapping/
+file_training_data/
+*.mat
+*.h5
+*.npy
+*.npz
+*.pkl
+
+# ===== 模型权重 =====
+*.pt
+*.pth
+params/models/
+
+# ===== params 中的推理输出（保留 normalization.json） =====
+params/inference_out.npz
+
+# ===== Conda 本地环境 =====
+nmm_ml/
+
+# ===== Python 缓存 =====
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ===== macOS =====
+.DS_Store
