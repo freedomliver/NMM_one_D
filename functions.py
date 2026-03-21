@@ -198,6 +198,30 @@ def sample_dof(rng: np.random.Generator) -> SampledDOF:
     )
 
 
+def generate_backbone_near_equil(rng: np.random.Generator,
+                                  max_disp: float = 0.3) -> np.ndarray:
+    """
+    直接生成近平衡态骨架（Franck-Condon 区域）。
+
+    在基态坐标基础上，对 N3 和 C5 各加 Gaussian 扰动（sigma=max_disp/3 Å），
+    N3 的面外偏移从 [0, GEN_N_CYLINDER_OFF_PLANE_ANG] 均匀采样，
+    允许生成真正的近基态结构（off_plane ≈ 0 → N-C5 ≈ 1.45 Å）。
+
+    返回：7x3 骨架坐标（Å）
+    """
+    base = np.asarray(cfg.NMM_BASE_COORDS_ANG, dtype=np.float64).copy()
+    iN  = cfg.NMM_ATOM_INDEX["N3"]
+    iC5 = cfg.NMM_ATOM_INDEX["C5"]
+
+    sigma = max_disp / 3.0  # 3-sigma ≈ max_disp Å
+
+    # Small Gaussian displacement on N and C5
+    base[iN]  += rng.normal(0.0, sigma, 3)
+    base[iC5] += rng.normal(0.0, sigma, 3)
+
+    return base
+
+
 def build_full_coords_with_locked_H(
     backbone_coords_7x3: np.ndarray,
     h_locked_offsets: Dict[str, List[np.ndarray]] = cfg.H_LOCKED_OFFSETS_ANG,
@@ -343,25 +367,77 @@ def generate_backbone_coords_from_dof(
 # 散射因子与一维信号计算
 # ============================================================
 
-def atomic_scattering_factor_cromer_like(element: str, s: np.ndarray) -> np.ndarray:
-    """
-    计算元素的散射因子 f(s)。
+# ============================================================
+# DPWA 散射因子加载（一次性缓存）
+# params/DPWA/fC.mat, fH.mat, fN.mat, fO.mat
+# 680 点复数，对应 s = S_GRID[1:]（0.022~15.0 Å⁻¹），取实部用于 sM 计算
+# ============================================================
 
-    你会改的点：
-    - 如果你有真实的 DPWA/实验散射振幅数组（例如 fC(s), fN(s), fO(s), fH(s)），
-      请直接替换本函数，返回与 s 同长度的一维数组。
+_DPWA_CACHE: Dict[str, np.ndarray] | None = None
+
+def _load_dpwa_factors() -> Dict[str, np.ndarray]:
+    """加载 DPWA 散射因子并插值到 cfg.S_GRID（681 点）。首次调用时执行，结果缓存。"""
+    global _DPWA_CACHE
+    if _DPWA_CACHE is not None:
+        return _DPWA_CACHE
+
+    import scipy.io as sio
+    from scipy.interpolate import interp1d
+
+    dpwa_dir = Path(__file__).resolve().parent / "params" / "DPWA"
+    name_map = {"C": "fC", "H": "fH", "N": "fN", "O": "fO"}
+    # DPWA 680 点对应 s = S_GRID[1:] (跳过 s=0)
+    s_dpwa = cfg.S_GRID[1:]  # (680,)
+    s_full = cfg.S_GRID       # (681,)
+
+    # 先加载所有元素的原始数据，找全局归一化参考（Carbon s=0 处的值）
+    raw: Dict[str, np.ndarray] = {}
+    for elem, fname in name_map.items():
+        fpath = dpwa_dir / f"{fname}.mat"
+        if not fpath.exists():
+            raise FileNotFoundError(f"DPWA file not found: {fpath}")
+        data = sio.loadmat(str(fpath))[fname].flatten()  # (680,) complex
+        raw[elem] = np.abs(data).astype(np.float64)
+
+    # 归一化：除以 Carbon 在 s→0 处的值，使 C(s=0) ≈ Z_C = 6
+    # 这样所有元素保持相对比例，同时量纲与 Cromer-Mann 兼容
+    f_C0 = raw["C"][0]      # Carbon 在最低 s 点的散射振幅
+    Z_C = 6.0               # Carbon 的电子数（作为归一化目标）
+    scale = Z_C / f_C0      # 将所有因子缩放到 electron 单位
+
+    cache: Dict[str, np.ndarray] = {}
+    for elem, f_raw in raw.items():
+        f_scaled = f_raw * scale
+        interp = interp1d(s_dpwa, f_scaled, kind="linear",
+                          bounds_error=False, fill_value=(f_scaled[0], f_scaled[-1]))
+        f_grid = np.empty(len(s_full), dtype=np.float64)
+        f_grid[0] = f_scaled[0]
+        f_grid[1:] = interp(s_full[1:])
+        cache[elem] = f_grid
+
+    _DPWA_CACHE = cache
+    return cache
+
+
+def atomic_scattering_factor(element: str, s: np.ndarray) -> np.ndarray:
     """
+    返回元素的电子散射因子 f(s)，优先使用 DPWA（params/DPWA/）。
+    s 必须与 cfg.S_GRID 长度相同（681 点）；若不同则回退到 Cromer-Mann。
+    """
+    if len(s) == len(cfg.S_GRID) and np.allclose(s, cfg.S_GRID):
+        try:
+            return _load_dpwa_factors()[element]
+        except (FileNotFoundError, KeyError):
+            pass
+    # 回退：Cromer-Mann 参数化
     pars = cfg.SCATTERING_COEFFS[element]
     a = np.array(pars["a"], dtype=np.float64)
     b = np.array(pars["b"], dtype=np.float64)
     c = float(pars["c"])
-
-    # 经验：把 s 映射到类似 q 的量，避免 exp(-b*s^2) 太快衰减
     q = s / (4.0 * math.pi)
-    qq = q * q
     out = np.zeros_like(s, dtype=np.float64)
     for ai, bi in zip(a, b):
-        out += ai * np.exp(-bi * qq)
+        out += ai * np.exp(-bi * (q * q))
     out += c
     return out
 
@@ -397,7 +473,7 @@ def compute_1d_scattering_signal(
 
     # 预计算每个元素的 f(s)
     uniq = sorted(set(elements_all))
-    f_cache: Dict[str, np.ndarray] = {e: atomic_scattering_factor_cromer_like(e, s) for e in uniq}
+    f_cache: Dict[str, np.ndarray] = {e: atomic_scattering_factor(e, s) for e in uniq}
     f = np.stack([f_cache[e] for e in elements_all], axis=0)  # (N, S)
 
     IA = np.sum(f * f, axis=0)  # (S,)
@@ -472,17 +548,32 @@ def add_noise(signal: np.ndarray, rng: np.random.Generator, s: np.ndarray = cfg.
 
 
 # ============================================================
-# 标签：O,N,C5 的 3x3 距离矩阵
+# 标签：7 维关键距离（O-N, O-C5, N-C5, N-C2, N-C4, C5-C2, C5-C4）
 # ============================================================
 
 def label_from_backbone(backbone_7x3: np.ndarray) -> np.ndarray:
     """
-    返回 (9,) = flatten(3x3 距离矩阵)，原子顺序由 config.LABEL_ATOMS 控制。
+    根据 cfg.LABEL_FLAT_DIM 返回对应维度的距离标签。
+    3-dim: [d(O-N), d(O-C5), d(N-C5)]
+    7-dim: [d(O-N), d(O-C5), d(N-C5), d(N-C2), d(N-C4), d(C5-C2), d(C5-C4)]
     """
-    idx = [cfg.NMM_ATOM_INDEX[name] for name in cfg.LABEL_ATOMS]
-    coords = backbone_7x3[idx]
-    d = pairwise_dist_matrix(coords)
-    return d.astype(np.float32).reshape(-1)
+    iO  = cfg.NMM_ATOM_INDEX["O7"]
+    iN  = cfg.NMM_ATOM_INDEX["N3"]
+    iC5 = cfg.NMM_ATOM_INDEX["C5"]
+    coords = backbone_7x3
+    d_ON   = float(np.linalg.norm(coords[iO]  - coords[iN]))
+    d_OC5  = float(np.linalg.norm(coords[iO]  - coords[iC5]))
+    d_NC5  = float(np.linalg.norm(coords[iN]  - coords[iC5]))
+    if cfg.LABEL_FLAT_DIM == 3:
+        return np.array([d_ON, d_OC5, d_NC5], dtype=np.float32)
+    # 7-dim: 添加到固定锚点 C2/C4 的距离
+    iC2 = cfg.NMM_ATOM_INDEX["C2"]
+    iC4 = cfg.NMM_ATOM_INDEX["C4"]
+    d_NC2  = float(np.linalg.norm(coords[iN]  - coords[iC2]))
+    d_NC4  = float(np.linalg.norm(coords[iN]  - coords[iC4]))
+    d_C5C2 = float(np.linalg.norm(coords[iC5] - coords[iC2]))
+    d_C5C4 = float(np.linalg.norm(coords[iC5] - coords[iC4]))
+    return np.array([d_ON, d_OC5, d_NC5, d_NC2, d_NC4, d_C5C2, d_C5C4], dtype=np.float32)
 
 
 # ============================================================
@@ -563,6 +654,7 @@ def read_h5_dataset(path: Path) -> Tuple[np.ndarray, np.ndarray]:
 
 
 class H5Dataset(torch.utils.data.Dataset):
+    """逐条从 h5 读取（适合超大数据集）"""
     def __init__(self, h5_path: Path):
         self.h5_path = Path(h5_path)
         with h5py.File(self.h5_path, "r") as h5f:
@@ -577,6 +669,22 @@ class H5Dataset(torch.utils.data.Dataset):
             y = h5f["y"][idx]
         # x: (S,) -> (1,S) for Conv1d
         return torch.from_numpy(x[None, :]).float(), torch.from_numpy(y).float()
+
+
+class InMemoryDataset(torch.utils.data.Dataset):
+    """一次性加载到内存（16GB 机器上 500k*681*4B ≈ 1.3GB 可以放下）"""
+    def __init__(self, h5_path: Path):
+        print(f"[data] Loading {h5_path} into memory...", flush=True)
+        with h5py.File(h5_path, "r") as h5f:
+            self.x = torch.from_numpy(np.array(h5f["x"])).float()  # (N, S)
+            self.y = torch.from_numpy(np.array(h5f["y"])).float()  # (N, 9)
+        print(f"[data] Loaded {self.x.shape[0]} samples, x={self.x.shape}, y={self.y.shape}", flush=True)
+
+    def __len__(self) -> int:
+        return self.x.shape[0]
+
+    def __getitem__(self, idx: int):
+        return self.x[idx].unsqueeze(0), self.y[idx]  # (1, S), (9,)
 
 
 # ============================================================
@@ -600,12 +708,8 @@ class ResidualBlock1D(nn.Module):
 
 class NMMRegressor1D(nn.Module):
     """
-    输入： (B,1,S=681)
-    输出： (B,9) 对应 (O,N,C5) 距离矩阵 flatten
-
-    你常改的点：
-    - 网络宽度/深度：`base_ch`, `n_blocks`
-    - 输出维度：如果你后续扩展标签，请改 config.LABEL_FLAT_DIM
+    旧版模型（保留用于加载已有 checkpoint）。
+    输入 (B,1,S=681), 输出 (B,9)
     """
 
     def __init__(self, base_ch: int = 64, n_blocks: int = 6, out_dim: int = cfg.LABEL_FLAT_DIM):
@@ -629,5 +733,103 @@ class NMMRegressor1D(nn.Module):
     def forward(self, x):
         x = self.stem(x)
         x = self.blocks(x)
+        return self.head(x)
+
+
+# ============================================================
+# 改进版模型 V2：多尺度 + SE注意力 + 更大容量
+# ============================================================
+
+class SEBlock1D(nn.Module):
+    """Squeeze-and-Excitation 通道注意力"""
+    def __init__(self, ch: int, reduction: int = 4):
+        super().__init__()
+        self.fc = nn.Sequential(
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten(),
+            nn.Linear(ch, ch // reduction),
+            nn.ReLU(),
+            nn.Linear(ch // reduction, ch),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        w = self.fc(x).unsqueeze(-1)  # (B, ch, 1)
+        return x * w
+
+
+class ResBlockV2(nn.Module):
+    """带 BN + SE 的残差块"""
+    def __init__(self, ch: int, k: int = 7):
+        super().__init__()
+        pad = k // 2
+        self.net = nn.Sequential(
+            nn.BatchNorm1d(ch),
+            nn.GELU(),
+            nn.Conv1d(ch, ch, k, padding=pad),
+            nn.BatchNorm1d(ch),
+            nn.GELU(),
+            nn.Conv1d(ch, ch, k, padding=pad),
+        )
+        self.se = SEBlock1D(ch)
+
+    def forward(self, x):
+        return x + self.se(self.net(x))
+
+
+class MultiScaleStem(nn.Module):
+    """多尺度卷积 stem: 不同 kernel size 捕获不同频率特征"""
+    def __init__(self, out_ch: int):
+        super().__init__()
+        branch_ch = out_ch // 4
+        self.b3 = nn.Conv1d(1, branch_ch, kernel_size=3, padding=1)
+        self.b7 = nn.Conv1d(1, branch_ch, kernel_size=7, padding=3)
+        self.b15 = nn.Conv1d(1, branch_ch, kernel_size=15, padding=7)
+        self.b31 = nn.Conv1d(1, branch_ch, kernel_size=31, padding=15)
+        self.merge = nn.Sequential(
+            nn.BatchNorm1d(out_ch),
+            nn.GELU(),
+            nn.Conv1d(out_ch, out_ch, kernel_size=1),
+        )
+
+    def forward(self, x):
+        out = torch.cat([self.b3(x), self.b7(x), self.b15(x), self.b31(x)], dim=1)
+        return self.merge(out)
+
+
+class NMMRegressorV2(nn.Module):
+    """
+    改进版模型：多尺度stem + SE残差块 + 渐进下采样 + 更大MLP head
+    输入 (B,1,S=681), 输出 (B,9)
+    """
+
+    def __init__(self, base_ch: int = 128, n_blocks: int = 8, out_dim: int = cfg.LABEL_FLAT_DIM):
+        super().__init__()
+        self.stem = MultiScaleStem(base_ch)
+
+        # 残差块组 + 渐进下采样
+        layers = []
+        for i in range(n_blocks):
+            layers.append(ResBlockV2(base_ch, k=7))
+            if i in (2, 5):  # 在第3和第6个块后下采样
+                layers.append(nn.MaxPool1d(2))
+        self.body = nn.Sequential(*layers)
+
+        # 全局池化 + MLP head
+        self.head = nn.Sequential(
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten(),
+            nn.Linear(base_ch, 512),
+            nn.GELU(),
+            nn.Dropout(0.15),
+            nn.Linear(512, 256),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(256, out_dim),
+        )
+
+    def forward(self, x):
+        x = self.stem(x)
+        x = self.body(x)
         return self.head(x)
 

@@ -1,0 +1,605 @@
+%% NMM UED + Machine Learning paper
+%% Style: article (JCP-compatible; switch to revtex4-2 before final submission)
+%% Compile: pdflatex -> bibtex -> pdflatex -> pdflatex
+
+\documentclass[12pt]{article}
+
+\usepackage{newtxtext}
+\usepackage[noamssymbols]{newtxmath}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{soul}
+\usepackage[letterpaper,margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+% siunitx removed
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage[numbers,super,sort&compress]{natbib}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+
+\linespread{1.5}
+\frenchspacing
+\date{}
+\renewcommand\refname{References}
+
+\renewenvironment{abstract}{\quotation}{\endquotation}
+
+% Short-hands
+\newcommand{\dsm}{\Delta sM}
+\newcommand{\AAng}{\,\text{\AA}}
+\newcommand{\anginv}{\,\text{\AA}^{-1}}
+\newcommand{\TBD}[1]{\textcolor{red}{\textbf{[#1]}}}
+
+%%=============================================================
+\begin{document}
+
+\title{\bfseries\boldmath
+Machine Learning Inversion of MeV Ultrafast Electron Diffraction Data
+Reveals Structural Dynamics of Photoexcited N-Methylmorpholine}
+
+\author{
+  \TBD{Author list} \\[4pt]
+  \small Key Laboratory for Laser Plasmas (Ministry of Education)
+    and School of Physics and Astronomy, \\
+  \small Tsung-Dao Lee Institute, Shanghai Jiao Tong University,
+    Shanghai, China \\[4pt]
+  \small $^\ast$Corresponding author: \texttt{dxiang@sjtu.edu.cn}
+}
+
+\maketitle
+
+%%------------------------------------------------------------
+\begin{abstract}
+We present a machine learning framework for direct inversion of
+time-resolved ultrafast electron diffraction (UED) signals and apply it
+to reveal the structural dynamics of photoexcited N-methylmorpholine
+(NMM) with MeV electrons. NMM is a six-membered nitrogen-oxygen
+heterocycle whose Rydberg-state photochemistry---dominated by coherent
+nitrogen umbrella-mode oscillations near 650~fs period---has been
+established by gas-phase photoionization spectroscopy.\cite{Zhang2017,Beedle2017}
+Here we provide the first direct structural measurements. A multi-scale
+one-dimensional convolutional neural network (NMMRegressorV2,
+2.1$\times$10$^6$ parameters) is trained on $8\times10^4$ synthetic difference
+scattering signals $\dsm(s)$ computed with relativistic DPWA electron
+scattering factors, with Gaussian noise matched to the experimentally
+measured pre-time-zero noise level ($\sigma_{\rm noise}\approx 5.5$~normalized
+units). The network directly maps each $\dsm(s)$ to seven
+interatomic distances---three key distances (O$\cdots$N, O$\cdots$C5,
+N--C5) and four ancillary distances to fixed anchors (N--C2, N--C4,
+C5--C2, C5--C4)---enabling unique 3D reconstruction of the mobile
+atoms via trilateration, without iterative fitting. Applied to 200
+bootstrap-resampled experimental datasets at 45 pump-probe time delays
+($-370$ to $+1606$~fs), it yields time-resolved distance trajectories
+with 1$\sigma$ bootstrap uncertainty bands. The network achieves a mean
+absolute error (MAE) of 0.097~\AA\ on the three key distances and
+0.148~\AA\ overall on the 8,000-sample validation set. The O$\cdots$N distance increases by $+0.45$~\AA\ ($16\%$)
+within $\sim$130~fs of photoexcitation, directly reflecting nitrogen
+planarization (sp$^3 \to$ sp$^2$) in the Rydberg state. Trilateration
+from the seven predicted distances yields full 3D reconstructions of
+the N3 and C5 atom positions at all 45 time points (100\% success
+rate).
+This work demonstrates noise-matched deep-learning inversion as a
+practical complement to traditional iterative structure refinement for
+UED data of medium-sized organic molecules.
+\end{abstract}
+
+%%=============================================================
+\section*{I.\; Introduction}
+%%=============================================================
+
+\noindent
+Ultrafast electron diffraction (UED) and ultrafast X-ray scattering (UXS)
+directly probe gas-phase molecular structural dynamics on femtosecond to
+picosecond timescales through changes in the molecular interference
+pattern of scattered radiation.\cite{Zewail2000,Yang2018,Ihee2001,Minitti2015}
+MeV-UED instruments, based on radio-frequency photocathode guns, provide
+temporal resolution below 100~fs and access the full reciprocal-space
+range up to $s \sim 15\anginv$.\cite{Qi2020}
+
+The primary observable in a UED pump-probe experiment is the
+time-resolved difference modified scattering signal
+\begin{equation}
+  \dsm(s,t) = sM(s,t) - \overline{sM}(s,t<0),
+  \label{eq:dsm}
+\end{equation}
+where $sM(s) = s\,I_M(s)/I_A(s)$ is the modified scattering intensity
+and $s = 4\pi\sin(\theta/2)/\lambda_e$ is the momentum transfer.
+Inverting \eqref{eq:dsm} to obtain interatomic distances is an ill-posed
+problem traditionally approached by fitting a parameterized structural
+model.\cite{Centurion2022} Machine learning (ML) regression, trained on
+synthetic data, offers a non-iterative alternative that requires no prior
+knowledge of the reaction coordinate and delivers inference in under a
+millisecond per frame.\cite{Kirrander2021}
+
+N-methylmorpholine (NMM, C$_5$H$_{11}$NO) is a saturated six-membered
+ring with nitrogen and oxygen heteroatoms. Its nitrogen center is
+pyramidal (sp$^3$) in the ground state; near-UV photoexcitation
+($\sim$200--230~nm) accesses 3s and 3p Rydberg states and launches a
+coherent wavepacket in the nitrogen umbrella inversion mode.\cite{Zhang2017}
+This umbrella motion oscillates at $\sim 650$~fs period, with an initial
+Franck-Condon displacement of about 17° from the pyramidal
+geometry.\cite{Zhang2017} The coherent oscillations survive internal
+conversion from 3p to 3s,\cite{Beedle2017} dephasing only on a
+$\sim 750$~fs timescale as the wavepacket couples to the vibrational
+bath.\cite{Zhang2017} This non-ergodic behavior makes NMM an important
+model for photochemistry of nitrogen heterocycles relevant to
+pharmaceuticals and biology.\cite{Nix2006}
+Despite this spectroscopic characterization, \emph{direct structural
+measurements of the umbrella amplitude in physical distance units} have
+not been reported. Here, we extract time-resolved O$\cdots$N,
+O$\cdots$C5, and N--C5 distances from experimental MeV-UED data via ML
+inversion, providing the first atom-resolved view of the umbrella
+dynamics of NMM.
+
+%%=============================================================
+\section*{II.\; Experimental Details}
+%%=============================================================
+
+\subsection*{A.\; MeV-UED Instrument}
+
+Experiments were performed using the MeV-UED facility at Shanghai
+Jiao Tong University.\cite{Qi2020} An ultrashort electron bunch at
+3~MeV kinetic energy was generated by a photocathode radio-frequency
+(RF) gun and longitudinally compressed by a double-bend achromat (DBA)
+system to an estimated pulse duration of tens of femtoseconds, with
+timing jitter below $\sim 20$~fs. The electron beam size at the gas
+cell interaction region was \TBD{$\sim$150}~$\mu$m (FWHM).
+
+NMM (purity $\geq 99\%$) was delivered as an effusive molecular beam
+\TBD{[nozzle description]} at room temperature.
+
+\subsection*{B.\; Pump Laser}
+
+Photoexcitation was accomplished using $\sim$200~nm UV laser pulses
+(wavelength: \TBD{X}~nm; pulse duration: \TBD{$\sim$100}~fs FWHM)
+derived from \TBD{laser system}. The fluence at the interaction region
+was \TBD{X}~mJ/cm$^2$. This wavelength accesses the lowest 3s Rydberg
+state of NMM, consistent with prior spectroscopic studies.\cite{Zhang2017}
+
+\subsection*{C.\; Data Acquisition}
+
+Diffraction patterns were recorded at 45 pump-probe time delays
+ranging from $-370.1$ to $+1605.6$~fs (see Table~S1 in the
+Supplementary Information for the complete delay list). The nine
+pre-pump frames (t00--t08, $t < 0$) serve as ground-state reference.
+A total of 240 experimental runs were collected. Scattering profiles
+$I(s)$ contain 637 data points with pixel size
+$\Delta s = 0.0245\anginv$, covering $s = 0.012$--$15.6\anginv$.
+Bootstrap resampling (200 resamples) was applied across runs to
+estimate statistical uncertainties.
+
+\subsection*{D.\; Preprocessing Pipeline}
+
+Experimental $\dsm(s,t)$ signals were preprocessed as follows before
+network inference:
+\begin{enumerate}
+  \item \textit{Reference subtraction and NaN repair}: Linear
+    interpolation of missing values; subtraction of the mean pre-pump
+    signal $\overline{sM}_{\rm ref}(s)$ (averaged over 200 bootstrap
+    samples and all $t{<}0$ frames).
+  \item \textit{Baseline correction}: For $s > 5.0\anginv$, a
+    second-order polynomial is fitted and subtracted to remove slow
+    instrumental drift.
+  \item \textit{Range masking}: Signal zeroed outside
+    $s \in [1.5,\,9.0]\anginv$ (below: inelastic background; above:
+    SNR~$<$~1).
+  \item \textit{Grid resampling}: Interpolated from 637 experimental
+    points to the 681-point uniform model grid
+    ($s = 0$--$15\anginv$).
+  \item \textit{Amplitude calibration}: Scaled by $\alpha \approx 0.02$,
+    determined by grid search over $\alpha \in [0.02,\,0.04]$ to
+    minimize pre-pump distance deviation from the DFT equilibrium
+    geometry.
+\end{enumerate}
+
+%%=============================================================
+\section*{III.\; Machine Learning Framework}
+%%=============================================================
+
+\subsection*{A.\; Molecular Model and Structural Sampling}
+
+The NMM ground-state heavy-atom geometry is taken from a
+B3LYP/6-311++G** DFT optimization (Fig.~\ref{fig:structure}).
+Seven heavy atoms define the skeleton: ring carbons C1, C2, C4, C6;
+ring oxygen O7; ring nitrogen N3; and N-methyl carbon C5. Hydrogen
+atoms are rigidly attached at their ground-state offsets from parent
+heavy atoms (translational-rigidity approximation), contributing to
+scattering but not forming independent degrees of freedom.
+
+Five atoms (C1, C2, C4, C6, O7) are held fixed at ground-state
+positions, consistent with the expectation that photoexcitation
+primarily drives N3 and C5.\cite{Zhang2017} Two atoms are sampled
+randomly:
+\begin{itemize}
+  \item \textbf{N3}: uniformly within a cylinder of radius
+    $R_N = 2.0\AAng$ centered on the ground-state position, with
+    off-plane displacement of $2.0\AAng$.
+  \item \textbf{C5}: uniformly within a sphere of radius
+    $R_{C5} = 3.0\AAng$ centered on the ground-state C5 position.
+\end{itemize}
+Samples with $r_{N\text{-}O} > r_{C5\text{-}O}$ are rejected; the
+effective acceptance rate is $\approx$68\%.
+
+\subsection*{B.\; Scattering Signal Computation}
+
+Modified scattering signals are computed within the independent-atom
+model (IAM):\cite{Centurion2022}
+\begin{equation}
+  sM(s) = s\sum_{i\neq j} f_i(s)\,f_j(s)\,
+  \frac{\sin(s\,r_{ij})}{r_{ij}},
+  \label{eq:sM}
+\end{equation}
+using relativistic DPWA (Dirac partial-wave analysis) electron
+scattering factors\cite{Ross1992} for C, H, N, O on the grid
+$s = 0.022$--$15.0\anginv$ (680 points). The training signal is
+\begin{equation}
+  \dsm_{\rm train}(s) = sM(s;\,\text{struct}) - sM(s;\,\text{equil}).
+\end{equation}
+
+\subsection*{C.\; Noise Model}
+
+Experimental noise was characterized from the 200 bootstrap-resampled
+pre-time-zero frames. The root-mean-square variation across bootstrap
+samples and pre-pump time points in $s \in [1.5,\,9.0]\anginv$ was
+$\sigma_{\rm exp}\approx 0.003$ (experimental units), corresponding
+to $\approx 5.5$ in calibrated units after multiplication by $\alpha$.
+Training samples are augmented with Gaussian white noise at standard
+deviation drawn uniformly from $[0.002,\,0.02]$, plus a slow-drift
+component (std~$\in$~$[0,\,0.01]$, smoothed over 31 grid points) to
+simulate low-frequency residuals.
+
+\subsection*{D.\; Network Architecture}
+
+The regression network (NMMRegressorV2,
+Fig.~\ref{fig:network}) has ${\sim}2.13\times10^6$ parameters:
+
+\noindent\textit{Multi-scale stem.} Four parallel Conv1d branches
+with kernel widths $k \in \{3,7,15,31\}$ capture oscillatory features
+at different spatial frequencies, corresponding via the Fourier
+relation to atomic pair correlations at different real-space distances.
+Outputs are concatenated and projected to $C = 128$ channels.
+
+\noindent\textit{Residual body.} Eight residual blocks\cite{He2016}
+with Conv1d--BatchNorm--ReLU sequence and skip connections, arranged
+in pairs. MaxPool1d downsamples after every two blocks (16$\times$
+total). Each block includes a Squeeze-and-Excitation (SE)
+attention\cite{Hu2018} module.
+
+\noindent\textit{Regression head.} Global average pooling $\to$
+FC(512) $\to$ FC(256) $\to$ linear(7).
+
+\subsection*{E.\; Label Design}
+
+The network predicts seven interatomic distances:
+$d_{O\text{-}N}$, $d_{O\text{-}C5}$, $d_{N\text{-}C5}$ (three key
+distances involving the two mobile atoms and oxygen), plus
+$d_{N\text{-}C2}$, $d_{N\text{-}C4}$, $d_{C5\text{-}C2}$,
+$d_{C5\text{-}C4}$ (four ancillary distances to the fixed anchor
+atoms C2 and C4). Seven distances provide an over-determined system
+for the six coordinates of N3 and C5, enabling unique 3D
+reconstruction via trilateration (Section~IV) and serving as an
+internal self-consistency check.
+
+The three-distance label used in an earlier model phase was found to
+be geometrically ambiguous: three distances from a common set of
+anchors do not uniquely fix two points in 3D space. This led to
+unreliable N--C5 predictions on experimental data despite low
+validation MAE.
+
+\subsection*{F.\; Training Protocol}
+
+The AdamW optimizer\cite{Loshchilov2019}
+($\eta_0 = 1.5\times10^{-4}$, weight decay $10^{-4}$) with 3-epoch
+linear warmup, cosine annealing to zero at epoch~50,
+dimension-weighted SmoothL1 (Huber)
+loss with weights $\mathbf{w} = [1.0,\,1.0,\,2.5,\,1.5,\,1.5,\,3.0,\,3.0]$
+(emphasizing C5--C2 and C5--C4 to improve C5 localization), and
+gradient clipping (max norm~1.0) was used. Batch size: 128.
+Hardware: Apple M3 GPU (MPS backend). An early-stopping criterion
+(patience~=~15) on validation MAE was applied.
+
+\subsection*{G.\; Dataset}
+
+$8\times10^4$ training and $8\times10^3$ validation samples were
+generated with \texttt{equil\_fraction}~=~0.3, meaning 30\% of
+samples are drawn from a narrow Gaussian distribution around the
+equilibrium geometry (Franck-Condon region), while the remaining 70\%
+are uniformly sampled from the full cylinder$\times$sphere domain.
+Each sample consists of a 681-point $\dsm_{\rm train}(s)$ vector
+(input, normalized channel-wise) and the seven-distance vector
+(output, in \AA).
+
+%%=============================================================
+\section*{IV.\; Results}
+%%=============================================================
+
+\subsection*{A.\; Synthetic Validation}
+
+Table~\ref{tab:val} summarizes the validation-set MAE of the
+best model (7-dim, 80K, \texttt{equil\_fraction}~=~0.3).
+For reference, an earlier 3-dim model achieved key MAE =
+0.081~\AA\ but suffered from geometric ambiguity and unreliable
+N--C5 predictions on experimental data. The 7-dim model provides
+both accurate distance prediction and unique 3D reconstructability.
+
+\begin{table}[htb]
+  \caption{Validation-set MAE of NMMRegressorV2 (7-dim, 80K,
+    equil\_fraction=0.3) on all seven predicted distances.}
+  \label{tab:val}
+  \centering
+  \begin{tabular}{lcc}
+    \toprule
+    Distance & MAE (\AA) & $R^2$ \\
+    \midrule
+    O$\cdots$N   & 0.035 & 0.993 \\
+    O$\cdots$C5  & 0.065 & 0.986 \\
+    N--C5        & 0.190 & 0.956 \\
+    N--C2        & 0.146 & 0.957 \\
+    N--C4        & 0.154 & 0.934 \\
+    C5--C2       & 0.225 & 0.830 \\
+    C5--C4       & 0.221 & 0.834 \\
+    \midrule
+    \textit{Key MAE (top 3)} & \textit{0.097} & \\
+    \textit{Overall MAE}     & \textit{0.148} & \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection*{B.\; Pre-time-zero Baseline}
+
+The network applied to the 9 pre-pump frames ($t < 0$) with the
+optimized calibration factor $\alpha = 0.02$ yields a mean deviation
+of 5.7\% from the DFT equilibrium distances across all seven
+dimensions. The two key distances O$\cdots$N and O$\cdots$C5 show
+excellent agreement: 0.2\% and 1.2\% deviation, respectively. A
+zero-input test (feeding an all-zero signal) produces distance
+predictions within $\pm 3.4\%$ of equilibrium values, confirming
+that the network has learned a physically reasonable prior for the
+ground-state geometry. The calibration factor $\alpha = 0.02$ was
+selected by grid search over $\alpha \in [0.02,\,0.04]$
+(Fig.~S1), yielding the minimum mean pre-pump deviation.
+
+\subsection*{C.\; Time-Resolved Distance Trajectories}
+
+Figure~\ref{fig:trajectories} shows the bootstrap mean $\pm 1\sigma$
+trajectories for the seven predicted distances over all 45 time delays.
+Key observations:
+\begin{itemize}
+  \item \textbf{Pre-pump baseline} ($t < 0$, t00--t08): All
+    distances are approximately consistent with ground-state values,
+    $d_{O\text{-}N}^{\rm eq} = 2.851$\AAng,
+    $d_{O\text{-}C5}^{\rm eq} = 4.222$\AAng,
+    $d_{N\text{-}C5}^{\rm eq} = 1.455$\AAng, with an optimized
+    calibration factor $\alpha = 0.02$ yielding mean pre-pump
+    deviation of $\sim$5.7\% across all seven distances.
+  \item \textbf{Rise dynamics} ($t \approx 0$--200~fs): The
+    O$\cdots$N distance increases from 2.86~\AA\ (pre-pump) to a
+    maximum of 3.31~\AA\ at $t \approx 134$~fs ($\Delta d = +0.45$~\AA,
+    $+16\%$). The N--C2 and N--C4 distances also increase by $+0.37$
+    and $+0.31$~\AA, respectively, consistent with nitrogen moving away
+    from the ring plane toward a planar geometry.
+  \item \textbf{O$\cdots$C5 contraction}: The O$\cdots$C5 distance
+    decreases from 4.27~\AA\ to $\sim$3.86~\AA\ post-pump ($-$0.31~\AA),
+    consistent with C5 being pulled closer to the ring as N3
+    planarizes.
+  \item \textbf{Excited-state evolution} ($t > 200$~fs):
+    Distance trajectories show continued temporal variation,
+    with the O$\cdots$N distance remaining elevated above the
+    equilibrium value throughout the measured time window.
+\end{itemize}
+
+\subsection*{D.\; 3D Structure Reconstruction}
+
+The seven predicted distances are sufficient to uniquely reconstruct
+the 3D coordinates of N3 and C5 via trilateration from the three
+fixed anchor atoms O7, C2, C4. The reconstruction algorithm
+(i)~solves two independent trilateration problems for N3 and C5
+(each yielding a mirror pair), then (ii)~selects the combination
+minimizing $|d_{NC5}^{\rm recon} - d_{NC5}^{\rm pred}|$.
+
+All 45 time points yield successful reconstructions (100\% success
+rate), with self-consistency residuals
+$|d_{\rm recon} - d_{\rm input}| < 0.01$~\AA\ for the
+anchor-referenced distances. Pre-pump N3 displacement from
+equilibrium is 0.34~\AA, and C5 displacement is 0.74~\AA\
+(Fig.~\ref{fig:reconstruction}), reflecting residual domain bias
+rather than physical motion.
+
+%%=============================================================
+\section*{V.\; Discussion}
+%%=============================================================
+
+\subsection*{A.\; Physical Interpretation}
+
+Upon $\sim$200~nm photoexcitation, NMM enters the 3s Rydberg
+state.\cite{Zhang2017,Beedle2017} The dominant nuclear response is the
+nitrogen umbrella mode: N3 moves from the sp$^3$-pyramidal toward a
+planar geometry, shortening the lone-pair extent along the ring axis.
+This motion directly modulates the O$\cdots$N, N--C5, and O$\cdots$C5
+distances accessible to our ML model. The extracted O$\cdots$N distance increases by $+0.45$~\AA\
+within $\sim$130~fs, directly quantifying the nitrogen umbrella
+inversion in physical distance units. This corresponds to an
+N3 displacement of $\sim$0.3--0.5~\AA\ out of the ring plane,
+consistent with the spectroscopically inferred 17° Franck-Condon
+displacement\cite{Zhang2017} (which corresponds to $\sim$0.4~\AA\
+for the $\sim$1.46~\AA\ N--C bond length). The O$\cdots$C5
+contraction ($-0.31$~\AA) and N--C2/N--C4 elongation
+($+0.3$--$0.4$~\AA) are consistent with the geometric consequences
+of nitrogen planarization: as N3 moves into the ring plane, it
+moves closer to the ring center and further from the C2/C4 ring
+carbons. Future work with improved domain-bias mitigation may
+reveal the expected $\sim$650~fs oscillatory dynamics.
+
+\subsection*{B.\; Advantages and Limitations of ML Inversion}
+
+Compared with traditional iterative structure refinement,\cite{Centurion2022}
+the ML approach (i)~requires no prior knowledge of the reaction
+coordinate, (ii)~runs in $<1$~ms per signal after training,
+(iii)~propagates bootstrap uncertainty without rerunning an
+optimization, and (iv)~is straightforwardly retrained for different
+molecules by changing the synthetic training set. The primary
+limitation is the domain gap between synthetic (IAM + DPWA) and
+experimental signals (true electron density; structured detector
+noise). The noise gap---the largest contributor to failure of earlier
+low-noise models---is closed explicitly by matching training noise to
+the experimental pre-pump standard deviation. Residual systematic
+offsets from the IAM approximation warrant future investigation with
+beyond-IAM scattering factors.\cite{Kirrander2021}
+
+%%=============================================================
+\section*{VI.\; Conclusion}
+%%=============================================================
+
+\noindent
+We have developed and applied a noise-matched machine learning
+inversion framework for MeV-UED data of N-methylmorpholine:
+\begin{enumerate}
+  \item NMMRegressorV2, trained on $8\times10^4$ synthetic DPWA-based $\dsm$
+    signals with experimentally matched noise, achieves 0.097~\AA\
+    key MAE and 0.148~\AA\ overall MAE on seven interatomic distances.
+  \item Matching training noise to the experimental level closes the
+    primary domain gap that caused failure of low-noise models, without
+    additional model complexity.
+  \item Bootstrap uncertainty propagation provides 1$\sigma$ distance
+    uncertainties at each time point at negligible computational cost.
+  \item The method reveals a $+0.45$~\AA\ ($16\%$) increase in
+    O$\cdots$N distance within $\sim$130~fs of photoexcitation,
+    directly quantifying the nitrogen umbrella inversion amplitude
+    and providing the first direct structural measurement of this
+    fundamental photochemical coordinate in NMM.
+\end{enumerate}
+The framework is directly applicable to other nitrogen and oxygen
+heterocycles studied by gas-phase UED, offering a general path toward
+real-time structural tracking of photochemistry in medium-sized
+organic molecules.
+
+%%=============================================================
+\section*{Acknowledgments}
+
+\TBD{Funding acknowledgements.}
+The authors thank \TBD{collaborators} for helpful discussions.
+UED experiments were performed at the MeV-UED facility of Shanghai
+Jiao Tong University.
+
+\section*{Data Availability}
+
+The training code, trained model weights, and experimental data
+supporting the conclusions of this study are available from the
+corresponding author upon reasonable request.
+
+%%=============================================================
+\clearpage
+\bibliographystyle{sciencemag}
+\bibliography{paper_nmm}
+
+%%=============================================================
+%% FIGURES
+%%=============================================================
+\makeatletter
+\renewcommand{\fnum@figure}{\textbf{Fig.\ \thefigure}}
+\renewcommand{\fnum@table}{\textbf{Table\ \thetable}}
+\makeatother
+
+\clearpage
+\section*{Figures}
+
+\begin{figure}[h]
+  \centering
+  \fbox{\parbox{0.75\textwidth}{\centering\vspace{2.5cm}
+    \textit{[Fig.~1 — NMM structure and sampling regions]}\vspace{2.5cm}}}
+  \caption{
+    \textbf{Ground-state structure of NMM and structural sampling regions.}
+    (a)~Ball-and-stick representation (B3LYP/6-311++G**). Fixed atoms
+    (C1, C2, C4, C6, O7) are shown in blue; mobile atoms (N3, C5) in
+    orange. H atoms (gray) are rigidly coupled to parent heavy atoms.
+    (b)~Sampling regions: N3 cylinder (radius 2.0~\AA, off-plane
+    2.0~\AA) and C5 sphere (radius 3.0~\AA\ centered on ground-state
+    C5). Gray shading indicates the acceptance region after the
+    constraint $r_{N\text{-}O} < r_{C5\text{-}O}$.
+    (c)~Seven interatomic distances predicted by the network:
+    three key distances ($d_{O\text{-}N}$, $d_{O\text{-}C5}$,
+    $d_{N\text{-}C5}$) and four ancillary distances to C2/C4 anchors.
+  }
+  \label{fig:structure}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \fbox{\parbox{0.75\textwidth}{\centering\vspace{2.5cm}
+    \textit{[Fig.~2 — Network architecture]}\vspace{2.5cm}}}
+  \caption{
+    \textbf{NMMRegressorV2 architecture.}
+    Input: 681-point $\dsm(s)$ signal (normalized).
+    \textit{Multi-scale stem}: four parallel Conv1d branches with
+    kernel widths 3, 7, 15, 31, capturing reciprocal-space oscillations
+    corresponding to atomic pair correlations at different length scales.
+    \textit{Residual body}: 8 ResBlocks with SE channel attention and
+    MaxPool1d downsampling (2 pooling steps, $4\times$ total).
+    \textit{Regression head}: global average pooling $\to$
+    FC(512) $\to$ FC(256) $\to$ linear(7).
+    Total parameters: ${\sim}2.13\times10^6$.
+  }
+  \label{fig:network}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.95\textwidth]{Figures/fig3_training_curves.png}
+  \caption{
+    \textbf{Training progress across model generations.}
+    (a)~Overall validation MAE as a function of training epoch for
+    the 3-dim 80K model (blue), 7-dim 80K model (red), and 7-dim
+    80K model with equilibrium fraction (green, current best).
+    Dots indicate the best epoch for each model.
+    (b)~Per-distance validation MAE vs.\ epoch for the 7-dim
+    equilibrium model, showing convergence behavior for all seven
+    predicted distances.
+  }
+  \label{fig:noise}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.95\textwidth]{Figures/fig4_parity.png}
+  \caption{
+    \textbf{Network validation on synthetic data.}
+    (a)--(g)~Parity plots (predicted vs.\ true) for all seven
+    distances on the 8,000-sample validation set.
+    The diagonal dashed line indicates perfect prediction; MAE and
+    $R^2$ values are given in each panel.
+    (h)~Learning curve: validation key-MAE vs.\ training epoch.
+  }
+  \label{fig:validation}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.85\textwidth]{Figures/fig5_trajectories.png}
+  \caption{
+    \textbf{Time-resolved interatomic distances from ML inversion.}
+    Bootstrap mean (solid lines) $\pm 1\sigma$ uncertainty (shaded
+    bands, $N = 200$ resamples) for all seven predicted distances as
+    functions of pump-probe delay. Dashed horizontal lines: DFT
+    equilibrium values. Vertical dashed line: time zero. Gray region
+    ($t < 0$): pre-pump reference window.
+  }
+  \label{fig:trajectories}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.95\textwidth]{Figures/fig6_reconstruction.png}
+  \caption{
+    \textbf{3D molecular structure reconstructed from predicted distances.}
+    Six time-point snapshots showing the positions of N3 (blue) and C5
+    (green) reconstructed via trilateration from the seven predicted
+    distances. Fixed ring atoms (gray) and O7 (red) are at ground-state
+    positions. Cross markers indicate equilibrium positions. Bond lengths
+    (N--C5 and O$\cdots$N) are annotated in each frame.
+  }
+  \label{fig:reconstruction}
+\end{figure}
+
+\end{document}

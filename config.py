@@ -33,14 +33,14 @@ class Paths:
     models_dir: Path = root / "params" / "models"
 
     # 归一化参数（训练集统计量）
-    norm_json: Path = params_dir / "normalization.json"
+    norm_json: Path = params_dir / "normalization_7dim_80k_eq.json"
 
     # 训练数据文件（h5）
-    train_h5: Path = training_data_dir / "train_NMM.h5"
-    val_h5: Path = training_data_dir / "val_NMM.h5"
+    train_h5: Path = training_data_dir / "train_NMM_7dim_80k_eq.h5"
+    val_h5: Path = training_data_dir / "val_NMM_7dim_80k_eq.h5"
 
     # 模型权重
-    checkpoint_pt: Path = models_dir / "nmm_regressor.pt"
+    checkpoint_pt: Path = models_dir / "nmm_v2_7dim_80k_eq.pt"
 
 
 PATHS = Paths()
@@ -168,11 +168,11 @@ GEN_RANDOM_SEED = 20260311
 GEN_N_CYLINDER_OFF_PLANE_ANG = 2.0
 
 # N3 采样圆柱的半径（Å）【调试标记】
-GEN_N_CYLINDER_RADIUS_ANG = 3.5
+GEN_N_CYLINDER_RADIUS_ANG = 2.0  # was 3.5; focused on relevant dynamics range
 
 # ========== C5 原子采样参数（球体约束）==========
 # C5 采样球体的半径（Å）【调试标记】
-GEN_C5_SPHERE_RADIUS_ANG = 5.0
+GEN_C5_SPHERE_RADIUS_ANG = 3.0  # was 5.0; caps N-C5 ~5 Å to match experimental range
 
 # ========== 采样后的键长约束 ==========
 # N-O 键长必须 < C5-O 键长（外面那个 C 原子），否则丢弃该样本
@@ -223,9 +223,11 @@ NOISE_SPIKE_SCALE = 0.2
 # 标签定义（O, N, C5 的全距离矩阵）
 # =========================
 
-LABEL_ATOMS = ["O7", "N3", "C5"]
-LABEL_SIZE = 3  # 3x3 距离矩阵
-LABEL_FLAT_DIM = LABEL_SIZE * LABEL_SIZE  # 保存时用 flatten(9,) 便于训练
+LABEL_ATOMS = ["O7", "N3", "C5", "C2", "C4"]
+# 7 个独立距离：3 个关键 + 4 个到固定锚点 C2/C4 的距离
+# 7 个距离 > 6 DOF，可唯一确定 N3+C5 构型
+LABEL_PAIR_NAMES = ["O-N", "O-C5", "N-C5", "N-C2", "N-C4", "C5-C2", "C5-C4"]
+LABEL_FLAT_DIM = 7
 
 
 # =========================
