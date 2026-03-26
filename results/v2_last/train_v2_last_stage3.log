@@ -1,0 +1,75 @@
+[train] device=mps, model=v2
+[data] Loading file_training_data/train_NMM_v2_last.h5...
+[data]   raw shape: x=(100000, 431), y=(100000, 7)
+[data]   normalized, tensor shapes: x=torch.Size([100000, 1, 431]), y=torch.Size([100000, 7])
+[data] Loading file_training_data/val_NMM_v2_last.h5...
+[data]   raw shape: x=(10000, 431), y=(10000, 7)
+[data]   normalized, tensor shapes: x=torch.Size([10000, 1, 431]), y=torch.Size([10000, 7])
+[train] train=100000, val=10000
+[exp] Loading file_training_data/exp_full_v2_last.h5...
+[exp]   raw shape: x=(9000, 431), time_idx=(9000,), prepump=1400/9000
+[exp]   normalized tensor shape: x=torch.Size([9000, 1, 431])
+[exp] train/eval samples=9000  lambda_eq=0.25 lambda_cons=0.08
+[train] model params: 2,125,831
+[train] Initializing model weights from params/models/nmm_v2_last_balanced.pt
+[train] Starting training loop...
+[train] ep1 starting...
+  ep1 [50/782] loss=0.028246 lr=2.13e-07
+  ep1 [100/782] loss=0.029120 lr=4.26e-07
+  ep1 [150/782] loss=0.027429 lr=6.39e-07
+  ep1 [200/782] loss=0.027879 lr=8.53e-07
+  ep1 [250/782] loss=0.027976 lr=1.07e-06
+  ep1 [300/782] loss=0.028402 lr=1.28e-06
+  ep1 [350/782] loss=0.027187 lr=1.49e-06
+  ep1 [400/782] loss=0.027508 lr=1.71e-06
+  ep1 [450/782] loss=0.027297 lr=1.92e-06
+  ep1 [500/782] loss=0.027855 lr=2.13e-06
+  ep1 [550/782] loss=0.028801 lr=2.34e-06
+  ep1 [600/782] loss=0.026941 lr=2.56e-06
+  ep1 [650/782] loss=0.027157 lr=2.77e-06
+  ep1 [700/782] loss=0.028484 lr=2.98e-06
+  ep1 [750/782] loss=0.028030 lr=3.20e-06
+  ep1 [782/782] loss=0.027486 lr=3.33e-06
+[ep 001/3] train_loss=0.027853 exp_eq=0.001288 exp_cons=0.004568 | val_mse=0.054932 val_mae=0.1759A key_mae=0.1287A | exp_dev=0.0302A exp_key=0.0351A bal=0.2000 | O-N=0.0479 O-C5=0.1067 N-C5=0.2314 N-C2=0.1668 N-C4=0.1741 C5-C2=0.2560 C5-C4=0.2482 | 1021.5s *BEST_VAL* *BEST_EXP* *BEST_BAL*
+[train] resume ckpt saved -> nmm_v2_last_stage3.resume.pt
+[train] ep2 starting...
+  ep2 [50/782] loss=0.026688 lr=3.55e-06
+  ep2 [100/782] loss=0.028255 lr=3.76e-06
+  ep2 [150/782] loss=0.026495 lr=3.97e-06
+  ep2 [200/782] loss=0.027954 lr=4.19e-06
+  ep2 [250/782] loss=0.027377 lr=4.40e-06
+  ep2 [300/782] loss=0.028872 lr=4.61e-06
+  ep2 [350/782] loss=0.027374 lr=4.83e-06
+  ep2 [400/782] loss=0.028236 lr=5.04e-06
+  ep2 [450/782] loss=0.026748 lr=5.25e-06
+  ep2 [500/782] loss=0.027511 lr=5.46e-06
+  ep2 [550/782] loss=0.026568 lr=5.68e-06
+  ep2 [600/782] loss=0.027638 lr=5.89e-06
+  ep2 [650/782] loss=0.027923 lr=6.10e-06
+  ep2 [700/782] loss=0.027951 lr=6.32e-06
+  ep2 [750/782] loss=0.026716 lr=6.53e-06
+  ep2 [782/782] loss=0.027000 lr=6.67e-06
+[ep 002/3] train_loss=0.027473 exp_eq=0.001071 exp_cons=0.003014 | val_mse=0.053563 val_mae=0.1727A key_mae=0.1244A | exp_dev=0.0303A exp_key=0.0332A bal=0.1970 | O-N=0.0475 O-C5=0.1041 N-C5=0.2215 N-C2=0.1656 N-C4=0.1736 C5-C2=0.2515 C5-C4=0.2454 | 1026.1s *BEST_VAL* *BEST_BAL*
+[train] resume ckpt saved -> nmm_v2_last_stage3.resume.pt
+[train] ep3 starting...
+  ep3 [50/782] loss=0.026879 lr=6.88e-06
+  ep3 [100/782] loss=0.026533 lr=7.09e-06
+  ep3 [150/782] loss=0.026541 lr=7.31e-06
+  ep3 [200/782] loss=0.027719 lr=7.52e-06
+  ep3 [250/782] loss=0.027216 lr=7.73e-06
+  ep3 [300/782] loss=0.026325 lr=7.95e-06
+  ep3 [350/782] loss=0.027477 lr=8.16e-06
+  ep3 [400/782] loss=0.027571 lr=8.37e-06
+  ep3 [450/782] loss=0.027158 lr=8.58e-06
+  ep3 [500/782] loss=0.027505 lr=8.80e-06
+  ep3 [550/782] loss=0.027776 lr=9.01e-06
+  ep3 [600/782] loss=0.028229 lr=9.22e-06
+  ep3 [650/782] loss=0.027879 lr=9.44e-06
+  ep3 [700/782] loss=0.026537 lr=9.65e-06
+  ep3 [750/782] loss=0.027232 lr=9.86e-06
+  ep3 [782/782] loss=0.027585 lr=1.00e-05
+[ep 003/3] train_loss=0.027267 exp_eq=0.000967 exp_cons=0.002534 | val_mse=0.054826 val_mae=0.1750A key_mae=0.1269A | exp_dev=0.0352A exp_key=0.0380A bal=0.2032 | O-N=0.0475 O-C5=0.1063 N-C5=0.2268 N-C2=0.1667 N-C4=0.1729 C5-C2=0.2560 C5-C4=0.2485 | 1011.7s
+[train] resume ckpt saved -> nmm_v2_last_stage3.resume.pt
+[train] Done. Best val MAE: 0.1727 A -> params/models/nmm_v2_last_stage3.pt
+[train] Best experimental pre-pump dev: 0.0302 A -> params/models/nmm_v2_last_stage3_expbest.pt
+[train] Best balanced score: 0.1970 -> params/models/nmm_v2_last_stage3_balanced.pt

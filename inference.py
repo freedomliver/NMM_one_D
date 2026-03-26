@@ -1,5 +1,10 @@
 """
-推理脚本（三种模式）
+推理脚本（V2_last 主线）
+
+V2_last 默认：
+- checkpoint / 输入长度 / 归一化参数全部从 checkpoint 自动匹配
+- 主线固定 `7-label + delta + trunc(431) + DPWA`
+- 支持导出实验 pre-pump 弱监督训练集
 
 模式 A：合成数据 sanity-check（synth）
 - 生成 N 条"具有特征变化"的构型
@@ -8,12 +13,13 @@
 模式 B：实验数据推理（exp）
 - 读取 bootstrapping/results_240/ 下的 s0_*.mat (200 个文件, 每个 45×637)
 - 汇聚 200 次 bootstrap → 每个时间点的均值 / 标准差
-- 自动选择信号约定（--signal_mode）：
-    abs   : 旧绝对 sM 约定（当前 V2 模型，有域偏移，实验效果差）
-    delta : ΔsM 约定（s0 本身即 ΔsM，推荐）
 
 模式 C：中间诊断（avg_only）
 - 仅计算 200 个 bootstrap 文件的时间平均信号，保存到 npz，不做推理
+
+模式 D：导出 pre-pump 训练集（export_prepump_h5）
+- 用与推理完全一致的预处理链生成实验 pre-pump 输入
+- 输出到 h5，供 train.py 作为弱监督约束使用
 
 实验数据 s 轴（来自参考代码 train50_gen_NMM.py）：
   sPixel = 0.0245 Å⁻¹
@@ -32,17 +38,17 @@
   3. 乘以 alpha（从实验单位转到 Å⁻¹）
   4. 二阶多项式 baseline 扣除（s > baseline_start = 5.0 Å⁻¹）
   5. 范围掩蔽：s < s_low_mask（默认 1.5）和 s > s_high_mask（默认 9.0）置零
-  6. 插值到模型 681 点网格
+  6. 插值到模型 431 点截断网格
 
 常用参数：
-  --ckpt            模型权重（自动优先 nmm_v2_dpwa100k_eq.pt > nmm_v2_dpwa50k.pt）
+  --ckpt            模型权重（默认 V2_last 主线 checkpoint）
   --mode            synth / exp / avg_only
   --signal_mode     abs（旧绝对sM模型）/ delta（ΔsM 新模型，推荐）
   --alpha           实验信号缩放因子（默认 0.03，基于物理标定）
   --s_low_mask      遮蔽低 s 阈值（Å⁻¹，默认 1.5）
   --s_high_mask     遮蔽高 s 阈值（Å⁻¹，默认 9.0）
   --baseline_start  二阶多项式基线校正起始（Å⁻¹，默认 5.0；设 0 关闭）
-  --prepump_end     pre-pump 时间点上界，用于计算参考信号（默认 9，即 t00-t08）
+  --prepump_end     pre-pump 时间点上界，用于计算参考信号（默认 7，即 t00-t06）
   --out_npz         输出文件路径
 """
 
@@ -50,6 +56,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import h5py
 import numpy as np
 import torch
 import scipy.io as sio
@@ -68,26 +75,56 @@ EXP_S_GRID  = (np.arange(EXP_S_LEN) + 0.5) * EXP_S_PIXEL   # (637,)
 
 
 # ============================================================
-# 模型加载（自动识别 V1 / V2）
+# 模型加载（自动识别 schema / 输入长度）
 # ============================================================
+
+def _infer_input_grid(input_len: int) -> np.ndarray:
+    if input_len == cfg.S_LEN_TRUNC:
+        return cfg.S_GRID_TRUNC
+    raise ValueError(f"V2_last only supports truncated input length {cfg.S_LEN_TRUNC}, got {input_len}")
+
+
+def _adapt_x_to_input_len(x: np.ndarray, input_len: int) -> np.ndarray:
+    """
+    将输入信号适配到 V2_last checkpoint 所需长度。
+    """
+    if x.shape[1] == input_len:
+        return x
+    raise ValueError(f"input length mismatch: got {x.shape[1]}, expected {input_len}")
+
 
 def load_model(ckpt_path: Path, device: torch.device):
     ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
-    keys = list(ckpt["model_state"].keys())
-    # 从 checkpoint 推断 out_dim（兼容旧 9 维和新 3/7 维模型）
+    state = ckpt["model_state"]
+    keys = list(state.keys())
     head_weight_key = [k for k in keys if k.endswith("weight") and "head" in k]
-    out_dim = ckpt["model_state"][head_weight_key[-1]].shape[0] if head_weight_key else cfg.LABEL_FLAT_DIM
-    if any("stem.b3" in k or "stem.b7" in k or "body." in k for k in keys):
-        model = fn.NMMRegressorV2(out_dim=out_dim)
-        ver = "V2"
+    out_dim = state[head_weight_key[-1]].shape[0] if head_weight_key else cfg.LABEL_FLAT_DIM
+    ver = ckpt.get("model_version", "v2")
+    base_ch = ckpt.get("base_ch", 128)
+    n_blocks = ckpt.get("n_blocks", 8)
+    if ver == "v3":
+        model = fn.NMMRegressorV3(base_ch=base_ch, n_blocks=n_blocks, out_dim=out_dim)
+    elif ver == "v2":
+        model = fn.NMMRegressorV2(base_ch=base_ch, n_blocks=n_blocks, out_dim=out_dim)
     else:
-        model = fn.NMMRegressor1D(out_dim=out_dim)
-        ver = "V1"
-    model.load_state_dict(ckpt["model_state"], strict=True)
+        model = fn.NMMRegressor1D(base_ch=base_ch, n_blocks=n_blocks, out_dim=out_dim)
+    model.load_state_dict(state, strict=True)
     model.to(device).eval()
     norm = fn.load_normalization(Path(ckpt["norm_json"]))
-    print(f"[load_model] {ver} loaded from {ckpt_path} (out_dim={out_dim})")
-    return model, norm, out_dim
+    input_len = int(len(norm.x_mean))
+    config_meta = ckpt.get("config", {})
+    label_names = config_meta.get("label_names") or fn.label_names_for_dim(out_dim)
+    schema_kind = "mainline" if out_dim == 7 else "legacy"
+    meta = {
+        "out_dim": out_dim,
+        "input_len": input_len,
+        "input_grid": _infer_input_grid(input_len),
+        "label_names": label_names,
+        "schema_kind": schema_kind,
+    }
+    print(f"[load_model] {ver.upper()} loaded from {ckpt_path} "
+          f"(out_dim={out_dim}, input_len={input_len}, schema={schema_kind})")
+    return model, norm, meta
 
 
 # ============================================================
@@ -95,6 +132,7 @@ def load_model(ckpt_path: Path, device: torch.device):
 # ============================================================
 
 def predict_batch(model, norm, x: np.ndarray, device: torch.device) -> np.ndarray:
+    x = _adapt_x_to_input_len(np.asarray(x, dtype=np.float32), len(norm.x_mean))
     x_n = fn.normalize_x(x, norm).astype(np.float32)
     xb  = torch.from_numpy(x_n[:, None, :]).float().to(device)
     with torch.no_grad():
@@ -141,8 +179,8 @@ def preprocess_single(
     bl_start: float = 5.0,
 ) -> np.ndarray:
     """
-    通用预处理：NaN 填充 → baseline 校正 → 掩蔽 → 插值到 681 点。
-    返回 (681,) float32，掩蔽区间保持原始信号值（仅清零 ΔsM 贡献）。
+    通用预处理：NaN 填充 → baseline 校正 → 掩蔽 → 插值到模型输入网格。
+    返回 (len(s_model),) float32，掩蔽区间保持原始信号值（仅清零 ΔsM 贡献）。
     注意：不做幅度缩放，调用方负责缩放。
     """
     sig = _fill_nan(sig_raw)
@@ -155,14 +193,21 @@ def preprocess_single(
 
 def batch_preprocess(
     x_raw: np.ndarray,     # (N, 637)
+    s_model: np.ndarray = cfg.S_GRID,
     s_low: float = 1.5,
     s_high: float = 9.0,
     bl_start: float = 5.0,
-) -> np.ndarray:           # (N, 681)
+) -> np.ndarray:
     n = x_raw.shape[0]
-    out = np.zeros((n, cfg.S_LEN), dtype=np.float32)
+    out = np.zeros((n, len(s_model)), dtype=np.float32)
     for i in range(n):
-        out[i] = preprocess_single(x_raw[i], s_low=s_low, s_high=s_high, bl_start=bl_start)
+        out[i] = preprocess_single(
+            x_raw[i],
+            s_model=s_model,
+            s_low=s_low,
+            s_high=s_high,
+            bl_start=bl_start,
+        )
     return out
 
 
@@ -204,7 +249,7 @@ def load_all_bootstrap(exp_dir: Path, mat_key: str = "s0") -> np.ndarray:
 # Delta 模式校准：计算 pre-pump 参考和 alpha 缩放因子
 # ============================================================
 
-def compute_delta_calibration(raw: np.ndarray, prepump_end: int = 9,
+def compute_delta_calibration(raw: np.ndarray, prepump_end: int = 7,
                                alpha_override: float | None = None):
     """
     raw: (B, T, 637)
@@ -242,9 +287,12 @@ def compute_delta_calibration(raw: np.ndarray, prepump_end: int = 9,
 
 
 def preprocess_delta(
-    sig_preprocessed: np.ndarray,   # (681,) already baseline-corrected + masked
-    s0_ref_model: np.ndarray,        # (681,) pre-pump reference on model grid
+    sig_preprocessed: np.ndarray,
+    s0_ref_model: np.ndarray,
     alpha: float,
+    s_model: np.ndarray,
+    s_low: float,
+    s_high: float,
 ) -> np.ndarray:
     """
     ΔsM 最终信号 = (sig - s0_ref_model) * alpha。
@@ -253,8 +301,170 @@ def preprocess_delta(
     """
     delta = (sig_preprocessed - s0_ref_model) * alpha
     # Keep only valid s range (zero outside to match training ΔsM convention)
-    delta[(cfg.S_GRID < 1.5) | (cfg.S_GRID > 9.0)] = 0.
+    delta[(s_model < s_low) | (s_model > s_high)] = 0.
     return delta.astype(np.float32)
+
+
+def export_prepump_h5(
+    out_h5: Path,
+    exp_dir: Path,
+    prepump_end: int,
+    alpha: float | None,
+    s_low_mask: float,
+    s_high_mask: float,
+    baseline_start: float,
+    mat_key: str = "s0",
+) -> None:
+    """
+    导出实验 pre-pump 弱监督训练集。
+
+    采用与正式实验推理完全一致的预处理链：
+    raw -> preprocess_single -> preprocess_delta -> flatten pre-pump samples
+    """
+    raw = load_all_bootstrap(exp_dir, mat_key)  # (B, T, 637)
+    n_b, n_t, _ = raw.shape
+    s_model = cfg.S_GRID_TRUNC
+
+    pre_pump_637, alpha_used, _ = compute_delta_calibration(
+        raw, prepump_end, alpha_override=alpha
+    )
+    s0_ref_preprocessed = preprocess_single(
+        pre_pump_637,
+        s_model=s_model,
+        s_low=s_low_mask,
+        s_high=s_high_mask,
+        bl_start=baseline_start,
+    )
+
+    total = n_b * prepump_end
+    x_out = np.zeros((total, len(s_model)), dtype=np.float32)
+    bootstrap_id = np.zeros(total, dtype=np.int32)
+    time_idx = np.zeros(total, dtype=np.int32)
+
+    row = 0
+    for b in range(n_b):
+        preprocessed = batch_preprocess(
+            raw[b],
+            s_model=s_model,
+            s_low=s_low_mask,
+            s_high=s_high_mask,
+            bl_start=baseline_start,
+        )
+        for t in range(min(prepump_end, n_t)):
+            x_out[row] = preprocess_delta(
+                preprocessed[t],
+                s0_ref_preprocessed,
+                alpha_used,
+                s_model=s_model,
+                s_low=s_low_mask,
+                s_high=s_high_mask,
+            )
+            bootstrap_id[row] = b
+            time_idx[row] = t
+            row += 1
+
+    eq = fn.equilibrium_labels_for_dim(cfg.LABEL_FLAT_DIM).astype(np.float32)
+    out_h5.parent.mkdir(parents=True, exist_ok=True)
+    with h5py.File(out_h5, "w") as h5f:
+        h5f.create_dataset("x", data=x_out, compression="gzip", compression_opts=4, shuffle=True)
+        h5f.create_dataset("bootstrap_id", data=bootstrap_id, compression="gzip", compression_opts=4, shuffle=True)
+        h5f.create_dataset("time_idx", data=time_idx, compression="gzip", compression_opts=4, shuffle=True)
+        h5f.create_dataset("equilibrium", data=eq)
+        h5f.create_dataset("s_model", data=s_model.astype(np.float32))
+        h5f.attrs["alpha"] = float(alpha_used)
+        h5f.attrs["prepump_end"] = int(prepump_end)
+        h5f.attrs["s_low_mask"] = float(s_low_mask)
+        h5f.attrs["s_high_mask"] = float(s_high_mask)
+        h5f.attrs["baseline_start"] = float(baseline_start)
+
+    print(
+        f"[export_prepump_h5] saved {row} samples "
+        f"({n_b} bootstraps x {prepump_end} prepump frames) -> {out_h5}"
+    )
+    print(f"[export_prepump_h5] alpha={alpha_used:.5f}  s_len={len(s_model)}")
+
+
+def export_exp_h5(
+    out_h5: Path,
+    exp_dir: Path,
+    prepump_end: int,
+    alpha: float | None,
+    s_low_mask: float,
+    s_high_mask: float,
+    baseline_start: float,
+    mat_key: str = "s0",
+) -> None:
+    """
+    导出完整实验弱监督训练集（全部时间点）。
+
+    预处理链与正式实验推理一致，额外写出 `is_prepump` 供训练时：
+    - pre-pump 样本使用平衡态弱监督
+    - 全部时间点使用 bootstrap consistency
+    """
+    raw = load_all_bootstrap(exp_dir, mat_key)  # (B, T, 637)
+    n_b, n_t, _ = raw.shape
+    s_model = cfg.S_GRID_TRUNC
+
+    pre_pump_637, alpha_used, _ = compute_delta_calibration(
+        raw, prepump_end, alpha_override=alpha
+    )
+    s0_ref_preprocessed = preprocess_single(
+        pre_pump_637,
+        s_model=s_model,
+        s_low=s_low_mask,
+        s_high=s_high_mask,
+        bl_start=baseline_start,
+    )
+
+    total = n_b * n_t
+    x_out = np.zeros((total, len(s_model)), dtype=np.float32)
+    bootstrap_id = np.zeros(total, dtype=np.int32)
+    time_idx = np.zeros(total, dtype=np.int32)
+    is_prepump = np.zeros(total, dtype=np.int8)
+
+    row = 0
+    for b in range(n_b):
+        preprocessed = batch_preprocess(
+            raw[b],
+            s_model=s_model,
+            s_low=s_low_mask,
+            s_high=s_high_mask,
+            bl_start=baseline_start,
+        )
+        for t in range(n_t):
+            x_out[row] = preprocess_delta(
+                preprocessed[t],
+                s0_ref_preprocessed,
+                alpha_used,
+                s_model=s_model,
+                s_low=s_low_mask,
+                s_high=s_high_mask,
+            )
+            bootstrap_id[row] = b
+            time_idx[row] = t
+            is_prepump[row] = int(t < prepump_end)
+            row += 1
+
+    eq = fn.equilibrium_labels_for_dim(cfg.LABEL_FLAT_DIM).astype(np.float32)
+    out_h5.parent.mkdir(parents=True, exist_ok=True)
+    with h5py.File(out_h5, "w") as h5f:
+        h5f.create_dataset("x", data=x_out, compression="gzip", compression_opts=4, shuffle=True)
+        h5f.create_dataset("bootstrap_id", data=bootstrap_id, compression="gzip", compression_opts=4, shuffle=True)
+        h5f.create_dataset("time_idx", data=time_idx, compression="gzip", compression_opts=4, shuffle=True)
+        h5f.create_dataset("is_prepump", data=is_prepump, compression="gzip", compression_opts=4, shuffle=True)
+        h5f.create_dataset("equilibrium", data=eq)
+        h5f.create_dataset("s_model", data=s_model.astype(np.float32))
+        h5f.attrs["alpha"] = float(alpha_used)
+        h5f.attrs["prepump_end"] = int(prepump_end)
+        h5f.attrs["s_low_mask"] = float(s_low_mask)
+        h5f.attrs["s_high_mask"] = float(s_high_mask)
+        h5f.attrs["baseline_start"] = float(baseline_start)
+
+    print(
+        f"[export_exp_h5] saved {row} samples "
+        f"({n_b} bootstraps x {n_t} frames, prepump={prepump_end}) -> {out_h5}"
+    )
+    print(f"[export_exp_h5] alpha={alpha_used:.5f}  s_len={len(s_model)}")
 
 
 # ============================================================
@@ -286,6 +496,7 @@ def synth_feature_set(n: int, seed: int, signal_mode: str = "abs") -> tuple[np.n
             if signal_mode == "delta" and sM_ground is not None:
                 sig = sig - sM_ground
             sig = fn.add_noise(sig, rng)
+            sig = sig[cfg._s_trunc_mask]
             lab = fn.label_from_backbone(backbone)
             x_list.append(sig)
             y_list.append(lab)
@@ -299,22 +510,15 @@ def synth_feature_set(n: int, seed: int, signal_mode: str = "abs") -> tuple[np.n
 # ============================================================
 
 def main():
-    # 默认 ckpt 优先级
-    default_ckpt = str(cfg.PATHS.checkpoint_pt)
-    for candidate in ["nmm_v2_7dim_80k.pt", "nmm_v2_3dim_80k.pt", "nmm_v2_dpwa100k_eq.pt", "nmm_v2_dpwa50k.pt", "nmm_v2.pt", "nmm_regressor.pt"]:
-        cpath = cfg.PATHS.models_dir / candidate
-        if cpath.exists():
-            default_ckpt = str(cpath)
-            break
-
     ap = argparse.ArgumentParser()
-    ap.add_argument("--ckpt",           type=str, default=default_ckpt)
-    ap.add_argument("--mode",           type=str, choices=["synth", "exp", "avg_only"],
+    ap.add_argument("--ckpt",           type=str, default=str(cfg.PATHS.checkpoint_pt))
+    ap.add_argument("--mode",           type=str, choices=["synth", "exp", "avg_only", "export_prepump_h5", "export_exp_h5"],
                     default="synth")
-    ap.add_argument("--signal_mode",    type=str, choices=["abs", "delta"], default="delta",
-                    help="abs=绝对sM(旧), delta=ΔsM(新, 推荐)")
+    ap.add_argument("--signal_mode",    type=str, choices=["delta"], default="delta",
+                    help="V2_last 固定使用 ΔsM")
     ap.add_argument("--out_npz",        type=str,
                     default=str(cfg.PATHS.params_dir / "inference_out.npz"))
+    ap.add_argument("--out_h5",         type=str, default=None)
     ap.add_argument("--synth_n",        type=int, default=10000)
     ap.add_argument("--seed",           type=int, default=cfg.GEN_RANDOM_SEED + 7)
     ap.add_argument("--val_h5",         type=str, default=None,
@@ -325,8 +529,8 @@ def main():
     ap.add_argument("--s_low_mask",     type=float, default=1.5)
     ap.add_argument("--s_high_mask",    type=float, default=9.0)
     ap.add_argument("--baseline_start", type=float, default=5.0)
-    ap.add_argument("--prepump_end",    type=int, default=9,
-                    help="t=0..prepump_end-1 作为 pre-pump 参考（默认 9，即 t00-t08）")
+    ap.add_argument("--prepump_end",    type=int, default=7,
+                    help="t=0..prepump_end-1 作为 pre-pump 参考（默认 7，即 t00-t06）")
     ap.add_argument("--alpha",          type=float, default=None,
                     help="实验信号缩放因子（默认 None = 自动估算；推荐 0.03 物理标定）")
     ap.add_argument("--avg_bootstrap",  action="store_true",
@@ -338,6 +542,7 @@ def main():
           f"bl_start={args.baseline_start}")
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    print(f"[inf] device={device}")
 
     if args.mode == "avg_only":
         # 仅计算均值，不做推理
@@ -349,10 +554,42 @@ def main():
         print(f"[inf] saved avg: {args.out_npz}")
         return
 
+    if args.mode == "export_prepump_h5":
+        out_h5 = Path(args.out_h5) if args.out_h5 else cfg.PATHS.exp_prepump_h5
+        export_prepump_h5(
+            out_h5=out_h5,
+            exp_dir=Path(args.exp_dir),
+            prepump_end=args.prepump_end,
+            alpha=args.alpha,
+            s_low_mask=args.s_low_mask,
+            s_high_mask=args.s_high_mask,
+            baseline_start=args.baseline_start,
+            mat_key=args.mat_key,
+        )
+        return
+
+    if args.mode == "export_exp_h5":
+        out_h5 = Path(args.out_h5) if args.out_h5 else cfg.PATHS.exp_full_h5
+        export_exp_h5(
+            out_h5=out_h5,
+            exp_dir=Path(args.exp_dir),
+            prepump_end=args.prepump_end,
+            alpha=args.alpha,
+            s_low_mask=args.s_low_mask,
+            s_high_mask=args.s_high_mask,
+            baseline_start=args.baseline_start,
+            mat_key=args.mat_key,
+        )
+        return
+
     ckpt = Path(args.ckpt)
-    model, norm, out_dim = load_model(ckpt, device)
-    # 根据模型实际输出维度选择对应的标签名称
-    label_names = cfg.LABEL_PAIR_NAMES[:out_dim]
+    model, norm, meta = load_model(ckpt, device)
+    out_dim = meta["out_dim"]
+    label_names = list(meta["label_names"])
+    s_model = meta["input_grid"]
+    equilibrium = fn.equilibrium_labels_for_dim(out_dim)
+    if meta["schema_kind"] != "mainline":
+        print(f"[inf] WARNING: legacy schema detected ({out_dim} labels)")
 
     if args.mode == "synth":
         if args.val_h5:
@@ -362,13 +599,8 @@ def main():
             rng = np.random.default_rng(args.seed)
             idx = rng.choice(len(x_raw), n, replace=False)
             x_raw, y_true = x_raw[idx], y_true[idx]
-            # 反归一化的 x 不需要，直接用原始 x + norm 推理
-            x_n = fn.normalize_x(x_raw, norm).astype(np.float32)
-            xb  = torch.from_numpy(x_n[:, None, :]).float().to(device)
-            with torch.no_grad():
-                y_hat_n = model(xb).cpu().numpy().astype(np.float32)
-            y_hat = fn.denormalize_y(y_hat_n, norm)
             x = x_raw
+            y_hat = predict_batch(model, norm, x_raw, device)
             print(f"[inf:synth] using val_h5={args.val_h5}, n={n}")
         else:
             x, y_true = synth_feature_set(args.synth_n, seed=args.seed,
@@ -379,8 +611,19 @@ def main():
         for i, name in enumerate(label_names):
             print(f"[inf:synth] {name} mae: {per_dim[i]:.6f} Å")
         print(f"[inf:synth] overall mae: {err.mean():.6f} Å")
-        out = dict(y_hat=y_hat, y_true=y_true, x=x,
-                   mae_dim=per_dim, mae=float(err.mean()))
+        out = dict(
+            y_hat=y_hat,
+            y_true=y_true,
+            x=x,
+            mae_dim=per_dim,
+            mae=float(err.mean()),
+            label_names=np.array(label_names, dtype="U32"),
+            equilibrium=equilibrium.astype(np.float32),
+            schema_kind=np.array(meta["schema_kind"], dtype="U16"),
+            input_len=np.array(meta["input_len"], dtype=np.int32),
+            ckpt=np.array(str(ckpt), dtype="U256"),
+            s_model=s_model.astype(np.float32),
+        )
 
     else:  # exp
         exp_dir = Path(args.exp_dir)
@@ -400,27 +643,36 @@ def main():
                     raw_mean, args.prepump_end,
                     alpha_override=args.alpha)           # use mean for calib
                 s0_ref_preprocessed = preprocess_single(
-                    pre_pump_637,
+                pre_pump_637,
+                    s_model=s_model,
                     s_low=args.s_low_mask,
                     s_high=args.s_high_mask,
                     bl_start=args.baseline_start,
                 )
                 preprocessed_mean = batch_preprocess(
                     raw_mean[0],
+                    s_model=s_model,
                     s_low=args.s_low_mask,
                     s_high=args.s_high_mask,
                     bl_start=args.baseline_start,
-                )   # (T, 681)
+                )
                 final_mean = np.zeros_like(preprocessed_mean)
                 for t in range(n_t):
                     final_mean[t] = preprocess_delta(
-                        preprocessed_mean[t], s0_ref_preprocessed, alpha)
+                        preprocessed_mean[t],
+                        s0_ref_preprocessed,
+                        alpha,
+                        s_model=s_model,
+                        s_low=args.s_low_mask,
+                        s_high=args.s_high_mask,
+                    )
                 print(f"[inf:exp] avg_bootstrap calib done. "
                       f"Mean delta std (t00): "
-                      f"{final_mean[0][(cfg.S_GRID>=1.5)&(cfg.S_GRID<=9.)].std():.4f}")
+                      f"{final_mean[0][(s_model>=args.s_low_mask)&(s_model<=args.s_high_mask)].std():.4f}")
             else:
                 preprocessed_mean = batch_preprocess(
                     raw_mean[0],
+                    s_model=s_model,
                     s_low=args.s_low_mask,
                     s_high=args.s_high_mask,
                     bl_start=args.baseline_start,
@@ -447,10 +699,15 @@ def main():
                 raw_mean=raw_mean[0],
                 raw_std=raw_std,
                 s_exp=EXP_S_GRID,
-                s_model=cfg.S_GRID,
+                s_model=s_model.astype(np.float32),
                 signal_mode=np.array(args.signal_mode, dtype='U10'),
                 preprocess_params=np.array([args.s_low_mask, args.s_high_mask,
                                             args.baseline_start, args.prepump_end]),
+                label_names=np.array(label_names, dtype="U32"),
+                equilibrium=equilibrium.astype(np.float32),
+                schema_kind=np.array(meta["schema_kind"], dtype="U16"),
+                input_len=np.array(meta["input_len"], dtype=np.int32),
+                ckpt=np.array(str(ckpt), dtype="U256"),
             )
             if alpha is not None:
                 out["alpha"] = np.array(alpha)
@@ -461,10 +718,11 @@ def main():
             # ── Per-bootstrap mode (original) ────────────────────────────────
             # Step 1: 通用预处理 (B, T, 637) → (B, T, 681)
             print(f"[inf:exp] preprocessing {n_b}×{n_t} signals...")
-            preprocessed = np.zeros((n_b, n_t, cfg.S_LEN), dtype=np.float32)
+            preprocessed = np.zeros((n_b, n_t, len(s_model)), dtype=np.float32)
             for b in range(n_b):
                 preprocessed[b] = batch_preprocess(
                     raw[b],
+                    s_model=s_model,
                     s_low=args.s_low_mask,
                     s_high=args.s_high_mask,
                     bl_start=args.baseline_start,
@@ -479,20 +737,27 @@ def main():
                 # 将 s0_ref 也预处理到 681 点（baseline + mask + interp）
                 s0_ref_preprocessed = preprocess_single(
                     pre_pump_637,
+                    s_model=s_model,
                     s_low=args.s_low_mask,
                     s_high=args.s_high_mask,
                     bl_start=args.baseline_start,
-                )   # (681,)
+                )
 
                 # Step 3: 每个信号做 delta = (sig - s0_ref) * alpha
                 final = np.zeros_like(preprocessed)
                 for b in range(n_b):
                     for t in range(n_t):
                         final[b, t] = preprocess_delta(
-                            preprocessed[b, t], s0_ref_preprocessed, alpha)
+                            preprocessed[b, t],
+                            s0_ref_preprocessed,
+                            alpha,
+                            s_model=s_model,
+                            s_low=args.s_low_mask,
+                            s_high=args.s_high_mask,
+                        )
                 print(f"[inf:exp] delta calibration done. "
                       f"Sample norm stats (t00): "
-                      f"std={final[0,0][(cfg.S_GRID>=1.5)&(cfg.S_GRID<=9.)].std():.4f}")
+                      f"std={final[0,0][(s_model>=args.s_low_mask)&(s_model<=args.s_high_mask)].std():.4f}")
             else:
                 final = preprocessed
                 sM_ground = None
@@ -521,10 +786,15 @@ def main():
                 preprocessed=preprocessed,
                 raw=raw,
                 s_exp=EXP_S_GRID,
-                s_model=cfg.S_GRID,
+                s_model=s_model.astype(np.float32),
                 signal_mode=np.array(args.signal_mode, dtype='U10'),
                 preprocess_params=np.array([args.s_low_mask, args.s_high_mask,
                                             args.baseline_start, args.prepump_end]),
+                label_names=np.array(label_names, dtype="U32"),
+                equilibrium=equilibrium.astype(np.float32),
+                schema_kind=np.array(meta["schema_kind"], dtype="U16"),
+                input_len=np.array(meta["input_len"], dtype=np.int32),
+                ckpt=np.array(str(ckpt), dtype="U256"),
             )
             if alpha is not None:
                 out["alpha"] = np.array(alpha)
@@ -552,11 +822,11 @@ def alpha_sweep(args):
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     ckpt = Path(args.ckpt)
-    model, norm, out_dim = load_model(ckpt, device)
-    label_names = cfg.LABEL_PAIR_NAMES[:out_dim]
-
-    # Equilibrium distances
-    eq_label = fn.label_from_backbone(cfg.NMM_BASE_COORDS_ANG)
+    model, norm, meta = load_model(ckpt, device)
+    out_dim = meta["out_dim"]
+    label_names = list(meta["label_names"])
+    s_model = meta["input_grid"]
+    eq_label = fn.equilibrium_labels_for_dim(out_dim)
 
     # Load and preprocess bootstrap data
     exp_dir = Path(args.exp_dir)
@@ -572,14 +842,23 @@ def alpha_sweep(args):
         pre_pump_637, _, sM_ground = compute_delta_calibration(
             raw_mean, args.prepump_end, alpha_override=alpha)
         s0_ref_preprocessed = preprocess_single(
-            pre_pump_637, s_low=args.s_low_mask, s_high=args.s_high_mask,
+            pre_pump_637, s_model=s_model,
+            s_low=args.s_low_mask, s_high=args.s_high_mask,
             bl_start=args.baseline_start)
         preprocessed_mean = batch_preprocess(
-            raw_mean[0], s_low=args.s_low_mask, s_high=args.s_high_mask,
+            raw_mean[0], s_model=s_model,
+            s_low=args.s_low_mask, s_high=args.s_high_mask,
             bl_start=args.baseline_start)
         final_mean = np.zeros_like(preprocessed_mean)
         for t in range(n_t):
-            final_mean[t] = preprocess_delta(preprocessed_mean[t], s0_ref_preprocessed, alpha)
+            final_mean[t] = preprocess_delta(
+                preprocessed_mean[t],
+                s0_ref_preprocessed,
+                alpha,
+                s_model=s_model,
+                s_low=args.s_low_mask,
+                s_high=args.s_high_mask,
+            )
 
         y_pred = predict_batch(model, norm, final_mean, device)
         pre_pump_pred = y_pred[:args.prepump_end].mean(axis=0)
@@ -654,7 +933,7 @@ if __name__ == "__main__":
         ap.add_argument("--s_low_mask", type=float, default=1.5)
         ap.add_argument("--s_high_mask", type=float, default=9.0)
         ap.add_argument("--baseline_start", type=float, default=5.0)
-        ap.add_argument("--prepump_end", type=int, default=9)
+        ap.add_argument("--prepump_end", type=int, default=7)
         ap.add_argument("--alpha_values", type=str, default="0.02,0.025,0.03,0.035,0.04")
         ap.add_argument("--out_npz", type=str,
                         default=str(cfg.PATHS.params_dir / "inference_out.npz"))

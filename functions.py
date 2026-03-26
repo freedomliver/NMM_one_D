@@ -6,9 +6,9 @@
 - 每个关键函数的 docstring 都明确“哪些参数常改、怎么改”
 
 重要提醒（对应 manual.md 的要求）：
-- 输入信号是一维长度 681 的 `int(s)` / `delta sM(s)`（本工程使用 `config.S_GRID`）
+- 输入信号是一维长度 681 的 `int(s)` / `delta sM(s)`（V2_last 主线默认截断到 431 点）
 - H 原子参与干涉项计算，但 H 的坐标不作为自由度：H 坐标 = parent_C 坐标 + 固定偏移（见 `config.H_LOCKED_OFFSETS_ANG`）
-- 标签是 (O7, N3, C5) 的 3x3 全距离矩阵（flatten 为 9 维）
+- 当前主线标签是 7 个距离（O-N, O-C5, N-C5, N-C2, N-C4, C5-C2, C5-C4）
 """
 
 from __future__ import annotations
@@ -421,25 +421,22 @@ def _load_dpwa_factors() -> Dict[str, np.ndarray]:
 
 def atomic_scattering_factor(element: str, s: np.ndarray) -> np.ndarray:
     """
-    返回元素的电子散射因子 f(s)，优先使用 DPWA（params/DPWA/）。
-    s 必须与 cfg.S_GRID 长度相同（681 点）；若不同则回退到 Cromer-Mann。
+    返回元素的 DPWA 电子散射因子 f(s)。
+
+    V2_last 主线固定要求：
+    - 内部散射信号在 cfg.S_GRID (681 点) 上计算
+    - 之后再统一截断到 cfg.S_GRID_TRUNC (431 点)
     """
-    if len(s) == len(cfg.S_GRID) and np.allclose(s, cfg.S_GRID):
-        try:
-            return _load_dpwa_factors()[element]
-        except (FileNotFoundError, KeyError):
-            pass
-    # 回退：Cromer-Mann 参数化
-    pars = cfg.SCATTERING_COEFFS[element]
-    a = np.array(pars["a"], dtype=np.float64)
-    b = np.array(pars["b"], dtype=np.float64)
-    c = float(pars["c"])
-    q = s / (4.0 * math.pi)
-    out = np.zeros_like(s, dtype=np.float64)
-    for ai, bi in zip(a, b):
-        out += ai * np.exp(-bi * (q * q))
-    out += c
-    return out
+    s = np.asarray(s, dtype=np.float64)
+    if len(s) != len(cfg.S_GRID) or not np.allclose(s, cfg.S_GRID):
+        raise ValueError(
+            "V2_last requires scattering signals to be computed on cfg.S_GRID "
+            f"(got len={len(s)})"
+        )
+    try:
+        return _load_dpwa_factors()[element]
+    except KeyError as exc:
+        raise KeyError(f"unsupported element for DPWA scattering factor: {element}") from exc
 
 
 def compute_1d_scattering_signal(
@@ -548,14 +545,34 @@ def add_noise(signal: np.ndarray, rng: np.random.Generator, s: np.ndarray = cfg.
 
 
 # ============================================================
-# 标签：7 维关键距离（O-N, O-C5, N-C5, N-C2, N-C4, C5-C2, C5-C4）
+# 标签与评估基准
 # ============================================================
+
+def label_names_for_dim(dim: int) -> List[str]:
+    """
+    返回指定输出维度对应的标签名。
+    7 维是当前主线；3/9 维仅用于 legacy checkpoint 的兼容读取。
+    """
+    if dim in cfg.LEGACY_LABEL_NAME_MAP:
+        return list(cfg.LEGACY_LABEL_NAME_MAP[dim])
+    raise ValueError(f"unsupported label dim: {dim}")
+
+
+def legacy_matrix3_label_from_backbone(backbone_7x3: np.ndarray) -> np.ndarray:
+    """
+    Legacy 9 维标签：(O, N, C5) 的 3x3 距离矩阵 flatten。
+    仅用于兼容旧 checkpoint / 旧报告，不作为 V2_last 主线。
+    """
+    coords = np.asarray(backbone_7x3, dtype=np.float64)
+    idx = [cfg.NMM_ATOM_INDEX["O7"], cfg.NMM_ATOM_INDEX["N3"], cfg.NMM_ATOM_INDEX["C5"]]
+    mat = pairwise_dist_matrix(coords[idx])
+    return mat.astype(np.float32).reshape(-1)
+
 
 def label_from_backbone(backbone_7x3: np.ndarray) -> np.ndarray:
     """
-    根据 cfg.LABEL_FLAT_DIM 返回对应维度的距离标签。
-    3-dim: [d(O-N), d(O-C5), d(N-C5)]
-    7-dim: [d(O-N), d(O-C5), d(N-C5), d(N-C2), d(N-C4), d(C5-C2), d(C5-C4)]
+    返回当前主线的 7 维距离标签：
+    [d(O-N), d(O-C5), d(N-C5), d(N-C2), d(N-C4), d(C5-C2), d(C5-C4)]
     """
     iO  = cfg.NMM_ATOM_INDEX["O7"]
     iN  = cfg.NMM_ATOM_INDEX["N3"]
@@ -564,9 +581,6 @@ def label_from_backbone(backbone_7x3: np.ndarray) -> np.ndarray:
     d_ON   = float(np.linalg.norm(coords[iO]  - coords[iN]))
     d_OC5  = float(np.linalg.norm(coords[iO]  - coords[iC5]))
     d_NC5  = float(np.linalg.norm(coords[iN]  - coords[iC5]))
-    if cfg.LABEL_FLAT_DIM == 3:
-        return np.array([d_ON, d_OC5, d_NC5], dtype=np.float32)
-    # 7-dim: 添加到固定锚点 C2/C4 的距离
     iC2 = cfg.NMM_ATOM_INDEX["C2"]
     iC4 = cfg.NMM_ATOM_INDEX["C4"]
     d_NC2  = float(np.linalg.norm(coords[iN]  - coords[iC2]))
@@ -574,6 +588,21 @@ def label_from_backbone(backbone_7x3: np.ndarray) -> np.ndarray:
     d_C5C2 = float(np.linalg.norm(coords[iC5] - coords[iC2]))
     d_C5C4 = float(np.linalg.norm(coords[iC5] - coords[iC4]))
     return np.array([d_ON, d_OC5, d_NC5, d_NC2, d_NC4, d_C5C2, d_C5C4], dtype=np.float32)
+
+
+def equilibrium_labels_for_dim(dim: int) -> np.ndarray:
+    """
+    从当前 config 中的基态坐标显式计算“平衡距离”。
+    所有评估/绘图都应调用这里，避免把坐标分量误当作距离。
+    """
+    main = label_from_backbone(cfg.NMM_BASE_COORDS_ANG)
+    if dim == 7:
+        return main
+    if dim == 3:
+        return main[:3]
+    if dim == 9:
+        return legacy_matrix3_label_from_backbone(cfg.NMM_BASE_COORDS_ANG)
+    raise ValueError(f"unsupported label dim: {dim}")
 
 
 # ============================================================
@@ -833,3 +862,124 @@ class NMMRegressorV2(nn.Module):
         x = self.body(x)
         return self.head(x)
 
+
+# ============================================================
+# V3 模型：更深卷积 + 增强注意力 + 适配截断输入（~431 点）
+# ============================================================
+
+class CBAM1D(nn.Module):
+    """Convolutional Block Attention Module (1D): 通道注意力 + 空间注意力"""
+    def __init__(self, ch: int, reduction: int = 4):
+        super().__init__()
+        # 通道注意力 (SE-like, but with both avg+max pooling)
+        self.ch_fc = nn.Sequential(
+            nn.Linear(ch * 2, ch // reduction),
+            nn.ReLU(),
+            nn.Linear(ch // reduction, ch),
+            nn.Sigmoid(),
+        )
+        # 空间注意力
+        self.sp_conv = nn.Sequential(
+            nn.Conv1d(2, 1, kernel_size=7, padding=3),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, x):
+        # Channel attention
+        avg_pool = x.mean(dim=-1)           # (B, C)
+        max_pool = x.max(dim=-1).values     # (B, C)
+        ch_attn = self.ch_fc(torch.cat([avg_pool, max_pool], dim=1))  # (B, C)
+        x = x * ch_attn.unsqueeze(-1)
+        # Spatial attention
+        avg_s = x.mean(dim=1, keepdim=True)  # (B, 1, L)
+        max_s = x.max(dim=1, keepdim=True).values  # (B, 1, L)
+        sp_attn = self.sp_conv(torch.cat([avg_s, max_s], dim=1))  # (B, 1, L)
+        return x * sp_attn
+
+
+class ResBlockV3(nn.Module):
+    """V3 残差块: BN-GELU-Conv-BN-GELU-Conv + CBAM + 可选 bottleneck"""
+    def __init__(self, ch: int, k: int = 5, bottleneck_ratio: float = 1.0):
+        super().__init__()
+        mid_ch = max(ch // 4, int(ch * bottleneck_ratio)) if bottleneck_ratio < 1 else ch
+        pad = k // 2
+        self.net = nn.Sequential(
+            nn.BatchNorm1d(ch),
+            nn.GELU(),
+            nn.Conv1d(ch, mid_ch, 1) if mid_ch != ch else nn.Identity(),
+            nn.BatchNorm1d(mid_ch) if mid_ch != ch else nn.Identity(),
+            nn.GELU() if mid_ch != ch else nn.Identity(),
+            nn.Conv1d(mid_ch, mid_ch, k, padding=pad, groups=1),
+            nn.BatchNorm1d(mid_ch),
+            nn.GELU(),
+            nn.Conv1d(mid_ch, ch, 1) if mid_ch != ch else nn.Conv1d(ch, ch, k, padding=pad),
+        )
+        self.attn = CBAM1D(ch)
+
+    def forward(self, x):
+        return x + self.attn(self.net(x))
+
+
+class MultiScaleStemV3(nn.Module):
+    """V3 多尺度 stem: 5 个分支 + 更多特征"""
+    def __init__(self, out_ch: int):
+        super().__init__()
+        branch_ch = out_ch // 5
+        extra = out_ch - branch_ch * 5
+        self.b3 = nn.Conv1d(1, branch_ch, kernel_size=3, padding=1)
+        self.b5 = nn.Conv1d(1, branch_ch, kernel_size=5, padding=2)
+        self.b11 = nn.Conv1d(1, branch_ch, kernel_size=11, padding=5)
+        self.b21 = nn.Conv1d(1, branch_ch, kernel_size=21, padding=10)
+        self.b41 = nn.Conv1d(1, branch_ch + extra, kernel_size=41, padding=20)
+        self.merge = nn.Sequential(
+            nn.BatchNorm1d(out_ch),
+            nn.GELU(),
+            nn.Conv1d(out_ch, out_ch, kernel_size=1),
+        )
+
+    def forward(self, x):
+        out = torch.cat([self.b3(x), self.b5(x), self.b11(x),
+                         self.b21(x), self.b41(x)], dim=1)
+        return self.merge(out)
+
+
+class NMMRegressorV3(nn.Module):
+    """
+    V3 模型：适配截断输入 (~431 点)
+    - 5 分支多尺度 stem (更多频率覆盖)
+    - 10 个 CBAM 残差块 (更深)
+    - 3 次下采样 (8x)
+    - 更大 MLP head
+    输入 (B, 1, S), 输出 (B, out_dim)
+    """
+
+    def __init__(self, base_ch: int = 160, n_blocks: int = 10,
+                 out_dim: int = cfg.LABEL_FLAT_DIM):
+        super().__init__()
+        self.stem = MultiScaleStemV3(base_ch)
+
+        # 残差块组 + 渐进下采样
+        layers = []
+        for i in range(n_blocks):
+            layers.append(ResBlockV3(base_ch, k=5))
+            if i in (2, 5, 8):  # 3 次下采样
+                layers.append(nn.MaxPool1d(2))
+        self.body = nn.Sequential(*layers)
+
+        # 全局池化 + 更大 MLP head
+        self.head = nn.Sequential(
+            nn.AdaptiveAvgPool1d(1),
+            nn.Flatten(),
+            nn.Linear(base_ch, 512),
+            nn.GELU(),
+            nn.Dropout(0.15),
+            nn.Linear(512, 256),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(256, out_dim),
+        )
+
+    def forward(self, x):
+        x = self.stem(x)
+        x = self.body(x)
+        return self.head(x)

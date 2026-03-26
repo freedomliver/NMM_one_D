@@ -2,7 +2,7 @@
 本项目配置文件（重要：你需要经常改的参数都集中在这里）
 
 你最常修改的内容（建议只改这里，不要到处改脚本）：
-- S 轴长度/范围：`S_GRID`
+- S 轴基网格 / 主线截断区间：`S_GRID` / `S_GRID_TRUNC`
 - 分子原子顺序与映射：`NMM_ATOM_ORDER`、`NMM_ATOM_Z`、`NMM_ATOM_INDEX`
 - H 原子“锁死”策略（相对对应 C 的固定偏移量）：`H_LOCKED_OFFSETS_ANG`
 - 训练数据生成自由度范围/限制条件：`GEN_*` 一组参数
@@ -21,6 +21,14 @@ from pathlib import Path
 import numpy as np
 
 
+V2_LAST_TAG = "v2_last"
+DEFAULT_MODEL_VERSION = "v2"
+DEFAULT_DELTA_SM = True
+DEFAULT_EQUIL_FRACTION = 0.30
+DEFAULT_NO_DRIFT = True
+DEFAULT_TRUNCATE_S = True
+
+
 # =========================
 # 路径配置
 # =========================
@@ -31,16 +39,17 @@ class Paths:
     params_dir: Path = root / "params"
     training_data_dir: Path = root / "file_training_data"
     models_dir: Path = root / "params" / "models"
+    results_dir: Path = root / "results"
 
-    # 归一化参数（训练集统计量）
-    norm_json: Path = params_dir / "normalization_7dim_80k_eq.json"
+    # V2_last 默认产物（训练集统计量 / 数据集 / 模型权重）
+    norm_json: Path = params_dir / f"normalization_{V2_LAST_TAG}.json"
+    train_h5: Path = training_data_dir / f"train_NMM_{V2_LAST_TAG}.h5"
+    val_h5: Path = training_data_dir / f"val_NMM_{V2_LAST_TAG}.h5"
+    checkpoint_pt: Path = models_dir / f"nmm_{V2_LAST_TAG}.pt"
+    benchmark_md: Path = results_dir / "BENCHMARK_V2_LAST.md"
 
-    # 训练数据文件（h5）
-    train_h5: Path = training_data_dir / "train_NMM_7dim_80k_eq.h5"
-    val_h5: Path = training_data_dir / "val_NMM_7dim_80k_eq.h5"
-
-    # 模型权重
-    checkpoint_pt: Path = models_dir / "nmm_v2_7dim_80k_eq.pt"
+    exp_prepump_h5: Path = training_data_dir / f"exp_prepump_{V2_LAST_TAG}.h5"
+    exp_full_h5: Path = training_data_dir / f"exp_full_{V2_LAST_TAG}.h5"
 
 
 PATHS = Paths()
@@ -51,16 +60,28 @@ PATHS = Paths()
 # =========================
 
 # 说明：
-# - 这里用等间隔 s 轴，默认长度 681（manual.md 要求保持 681）
+# - 内部散射信号仍在 681 点基网格上计算，再统一截断到 V2_last 主线输入
 # - 如果你的实验/Matlab径向积分得到的 s0 已经有明确的 s 数组，请把这里替换为真实 s 数组
 S_LEN = 681
 S_MIN = 0.0
 S_MAX = 15.0
 S_GRID = np.linspace(S_MIN, S_MAX, S_LEN).astype(np.float64)
 
-# 计算信号时常用的“有效区间”裁剪（来自旧脚本经验：s<1 与 s>12 置零）
+# 计算信号时常用的”有效区间”裁剪（来自旧脚本经验：s<1 与 s>12 置零）
 S_CUTOFF_MIN = 1.0
 S_CUTOFF_MAX = 12.0
+
+
+# =========================
+# V2_last 默认截断 S 轴（实验优化：只保留有信息的区间）
+# =========================
+# 实验数据有效范围约 [1.5, 9.0]，信号计算 cutoff [1.0, 12.0]
+# 截断到 [0.5, 10.0] 保留 buffer，从 681 → 431 点（减少 37%）
+S_TRUNC_MIN = 0.5
+S_TRUNC_MAX = 10.0
+_s_trunc_mask = (S_GRID >= S_TRUNC_MIN) & (S_GRID <= S_TRUNC_MAX)
+S_GRID_TRUNC = S_GRID[_s_trunc_mask].copy()
+S_LEN_TRUNC = len(S_GRID_TRUNC)  # ~431
 
 
 # =========================
@@ -220,32 +241,22 @@ NOISE_SPIKE_SCALE = 0.2
 
 
 # =========================
-# 标签定义（O, N, C5 的全距离矩阵）
+# 标签定义（V2_last 主线：7 个距离）
 # =========================
 
 LABEL_ATOMS = ["O7", "N3", "C5", "C2", "C4"]
-# 7 个独立距离：3 个关键 + 4 个到固定锚点 C2/C4 的距离
-# 7 个距离 > 6 DOF，可唯一确定 N3+C5 构型
 LABEL_PAIR_NAMES = ["O-N", "O-C5", "N-C5", "N-C2", "N-C4", "C5-C2", "C5-C4"]
 LABEL_FLAT_DIM = 7
-
-
-# =========================
-# 散射因子（参数化模型，可替换）
-# =========================
-
-# 采用常见的 5-Gaussian + constant 形式（Cromer-Mann 类似形式）：
-#   f(q) = sum_i a_i * exp(-b_i * (q^2)) + c
-# 这里我们用 q = (s / (4*pi))，以保持数量级合理；如果你有 DPWA/ab-initio 的 f(s) 数据，
-# 直接用实验/理论给的数组替换 `get_atomic_scattering_factor` 即可。
-SCATTERING_FACTOR_MODEL = "cromer_mann_like"
-
-# 这些系数是“示例可运行参数”，不保证与你的电子散射完全一致；
-# 更推荐你后续把它替换为你已有的 `DPWA/f*.mat` 那样的真实 f(s)。
-SCATTERING_COEFFS = {
-    "H": dict(a=[0.489918, 0.262003, 0.196767, 0.049879], b=[20.6593, 7.74039, 49.5519, 2.20159], c=0.001305),
-    "C": dict(a=[2.31, 1.02, 1.5886, 0.865], b=[20.8439, 10.2075, 0.5687, 51.6512], c=0.2156),
-    "N": dict(a=[12.2126, 3.1322, 2.0125, 1.1663], b=[0.0057, 9.8933, 28.9975, 0.5826], c=-11.529),
-    "O": dict(a=[3.0485, 2.2868, 1.5463, 0.867], b=[13.2771, 5.7011, 0.3239, 32.9089], c=0.2508),
+LEGACY_LABEL_NAME_MAP = {
+    3: LABEL_PAIR_NAMES[:3],
+    7: LABEL_PAIR_NAMES,
+    9: ["O-O", "O-N", "O-C5", "N-O", "N-N", "N-C5", "C5-O", "C5-N", "C5-C5"],
 }
 
+
+# =========================
+# 散射因子
+# =========================
+
+# V2_last 主线固定使用 params/DPWA/f*.mat。
+# 不再保留 Cromer-Mann 或其他回退散射因子实现。

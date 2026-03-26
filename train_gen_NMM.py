@@ -1,6 +1,12 @@
 """
 生成 NMM 训练数据（.h5）并保存归一化参数（.json）
 
+V2_last 默认配置：
+- `--delta_sm`
+- `--equil_fraction 0.30`
+- `--no_drift`
+- 固定 `trunc` (431 pts)
+
 改进点：
 - 实时 flush 输出，随时可见进度
 - 分块写入 h5，避免大量数据堆在内存
@@ -59,6 +65,9 @@ def generate_dataset_to_h5(
     rng = np.random.default_rng(seed)
     h5_path.parent.mkdir(parents=True, exist_ok=True)
 
+    s_len = cfg.S_LEN_TRUNC
+    s_mask = (cfg.S_GRID >= cfg.S_TRUNC_MIN) & (cfg.S_GRID <= cfg.S_TRUNC_MAX)
+
     # 如果是差分模式，预计算平衡态信号一次
     sM_ground = None
     if delta_sm:
@@ -78,8 +87,8 @@ def generate_dataset_to_h5(
     rejected = 0
 
     # 用于在线计算 mean/std（Welford 算法简化版：累加 sum 和 sum_sq）
-    x_sum = np.zeros(cfg.S_LEN, dtype=np.float64)
-    x_sq_sum = np.zeros(cfg.S_LEN, dtype=np.float64)
+    x_sum = np.zeros(s_len, dtype=np.float64)
+    x_sq_sum = np.zeros(s_len, dtype=np.float64)
     y_sum = np.zeros(cfg.LABEL_FLAT_DIM, dtype=np.float64)
     y_sq_sum = np.zeros(cfg.LABEL_FLAT_DIM, dtype=np.float64)
 
@@ -90,8 +99,8 @@ def generate_dataset_to_h5(
         # 创建可扩展的 dataset（maxshape=None 表示无限制）
         chunk_s = min(chunk_size, max(1, n_samples))
         ds_x = h5f.create_dataset(
-            "x", shape=(0, cfg.S_LEN), maxshape=(None, cfg.S_LEN),
-            dtype=np.float32, chunks=(chunk_s, cfg.S_LEN),
+            "x", shape=(0, s_len), maxshape=(None, s_len),
+            dtype=np.float32, chunks=(chunk_s, s_len),
             compression="gzip", compression_opts=4,
         )
         ds_y = h5f.create_dataset(
@@ -147,6 +156,8 @@ def generate_dataset_to_h5(
             except Exception:
                 rejected += 1
                 continue
+
+            signal = signal[s_mask]
 
             x_buf.append(signal)
             y_buf.append(label)
@@ -222,12 +233,22 @@ def main():
     ap.add_argument("--val_h5", type=str, default=str(cfg.PATHS.val_h5))
     ap.add_argument("--norm_json", type=str, default=str(cfg.PATHS.norm_json))
     ap.add_argument("--chunk_size", type=int, default=10000)
-    ap.add_argument("--delta_sm", action="store_true",
-                    help="生成差分信号 ΔsM = sM(struct) - sM(equil)，与实验泵浦探测数据约定一致")
+    ap.add_argument("--delta_sm", dest="delta_sm", action="store_true",
+                    help="生成差分信号 ΔsM = sM(struct) - sM(equil)（V2_last 默认开启）")
+    ap.add_argument("--absolute_sm", dest="delta_sm", action="store_false",
+                    help="Legacy: 生成绝对 sM 信号，而不是 ΔsM")
     ap.add_argument("--noise_std_max", type=float, default=None,
                     help="覆盖 NOISE_GAUSS_STD_RANGE 上界（推荐 0.20 配合 --delta_sm）")
-    ap.add_argument("--equil_fraction", type=float, default=0.0,
+    ap.add_argument("--equil_fraction", type=float, default=cfg.DEFAULT_EQUIL_FRACTION,
                     help="近平衡态样本比例 [0,1]，推荐 0.25-0.35 平衡训练分布")
+    ap.add_argument("--no_drift", dest="no_drift", action="store_true",
+                    help="关闭低频漂移噪声（V2_last 默认开启）")
+    ap.add_argument("--with_drift", dest="no_drift", action="store_false",
+                    help="Legacy: 保留低频漂移噪声")
+    ap.set_defaults(
+        delta_sm=cfg.DEFAULT_DELTA_SM,
+        no_drift=cfg.DEFAULT_NO_DRIFT,
+    )
     args = ap.parse_args()
 
     train_h5 = Path(args.train_h5)
@@ -240,6 +261,12 @@ def main():
         log(f"[gen] noise_std_max overridden to {args.noise_std_max}")
     if args.equil_fraction > 0:
         log(f"[gen] equil_fraction={args.equil_fraction:.2f} (near-equilibrium sampling)")
+
+    if args.no_drift:
+        log(f"[gen] *** NO DRIFT: disabling low-frequency drift noise ***")
+        cfg.NOISE_DRIFT_ENABLE = False
+    log(f"[gen] *** TRUNCATE S: s=[{cfg.S_TRUNC_MIN}, {cfg.S_TRUNC_MAX}], "
+        f"{cfg.S_LEN_TRUNC} pts (was {cfg.S_LEN}) ***")
 
     log(f"[gen] === Generating train set: {args.train_n} samples ===")
     norm = generate_dataset_to_h5(

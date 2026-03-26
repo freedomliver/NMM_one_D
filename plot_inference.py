@@ -17,19 +17,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-import config as cfg
-
-
-# 平衡值（Å）
-EQ_VALS = {
-    "O-N":   2.8512,
-    "O-C5":  4.2221,
-    "N-C5":  1.4547,
-    "N-C2":  1.4622,
-    "N-C4":  1.4622,
-    "C5-C2": 2.4224,
-    "C5-C4": 2.4224,
-}
+import functions as fn
 
 COLORS = {
     "O-N":   "#e74c3c",
@@ -48,8 +36,8 @@ def main():
     ap.add_argument("--out",   type=str, required=True, help="输出 png 路径")
     ap.add_argument("--title", type=str, default="Experimental Inference — NMM Key Distances vs Time Delay")
     ap.add_argument("--timedelay", type=str, default="TimeDelay.mat")
-    ap.add_argument("--prepump_end", type=int, default=9,
-                    help="pre-pump 时间点上界（默认9，即 t00-t08）")
+    ap.add_argument("--prepump_end", type=int, default=7,
+                    help="pre-pump 时间点上界（默认7，即 t00-t06）")
     args = ap.parse_args()
 
     # 加载时间轴
@@ -61,9 +49,15 @@ def main():
     y_std  = d["y_std"]    # (45, D)
     n_t, n_dim = y_mean.shape
 
-    # 确定维度标签
-    all_labels = cfg.LABEL_PAIR_NAMES  # ["O-N","O-C5","N-C5","N-C2","N-C4","C5-C2","C5-C4"]
-    labels = all_labels[:n_dim]
+    # 确定维度标签与平衡值
+    if "label_names" in d:
+        labels = [str(x) for x in d["label_names"].tolist()]
+    else:
+        labels = fn.label_names_for_dim(n_dim)
+    if "equilibrium" in d:
+        eq_vals = np.asarray(d["equilibrium"], dtype=np.float32)
+    else:
+        eq_vals = fn.equilibrium_labels_for_dim(n_dim)
 
     # pre-pump 均值（t00 ~ prepump_end-1）
     pre_pump_mean = y_mean[:args.prepump_end].mean(axis=0)
@@ -75,7 +69,7 @@ def main():
     fig.suptitle(args.title, fontsize=11, fontweight="bold")
 
     for i, (ax, lbl) in enumerate(zip(axes, labels)):
-        eq  = EQ_VALS.get(lbl, None)
+        eq  = float(eq_vals[i]) if i < len(eq_vals) else None
         c   = COLORS.get(lbl, "#333333")
         mu  = y_mean[:, i]
         sig = y_std[:, i]

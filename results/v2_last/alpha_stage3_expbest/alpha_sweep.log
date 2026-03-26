@@ -1,0 +1,16 @@
+[load_model] V2 loaded from params/models/nmm_v2_last_stage3_expbest.pt (out_dim=7, input_len=431, schema=mainline)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[alpha_sweep] testing alphas: [0.006, 0.008, 0.01, 0.012, 0.015]
+[calib] alpha override=0.00600  pre_pump_residual_std=0.0283
+  alpha=0.0060: mean_dev=0.54%  O-N=0.4%  O-C5=0.2%  N-C5=1.2%  N-C2=1.2%  N-C4=0.4%  C5-C2=0.2%  C5-C4=0.0%
+[calib] alpha override=0.00800  pre_pump_residual_std=0.0283
+  alpha=0.0080: mean_dev=0.40%  O-N=0.5%  O-C5=0.4%  N-C5=0.1%  N-C2=0.9%  N-C4=0.2%  C5-C2=0.4%  C5-C4=0.2%
+[calib] alpha override=0.01000  pre_pump_residual_std=0.0283
+  alpha=0.0100: mean_dev=0.43%  O-N=0.6%  O-C5=0.3%  N-C5=1.0%  N-C2=0.4%  N-C4=0.1%  C5-C2=0.4%  C5-C4=0.2%
+[calib] alpha override=0.01200  pre_pump_residual_std=0.0283
+  alpha=0.0120: mean_dev=0.40%  O-N=0.7%  O-C5=0.1%  N-C5=1.6%  N-C2=0.1%  N-C4=0.0%  C5-C2=0.3%  C5-C4=0.1%
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+  alpha=0.0150: mean_dev=0.81%  O-N=0.7%  O-C5=0.1%  N-C5=3.1%  N-C2=0.8%  N-C4=0.3%  C5-C2=0.4%  C5-C4=0.2%
+
+[alpha_sweep] BEST alpha = 0.0080 (mean_dev = 0.40%)
+[alpha_sweep] saved: results/v2_last/alpha_stage3_expbest/alpha_sweep_diagnostics.png

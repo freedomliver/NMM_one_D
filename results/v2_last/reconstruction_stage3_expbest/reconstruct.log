@@ -1,0 +1,6 @@
+[reconstruct] loaded: results/v2_last/inference_v2_last_stage3_expbest_alpha008.npz, shape=(45, 7)
+[reconstruct] success: 45/45 time points
+[reconstruct] saved: results/v2_last/reconstruction_stage3_expbest/structure_snapshots.png
+[reconstruct] saved: results/v2_last/reconstruction_stage3_expbest/coordinate_trajectories.png
+[reconstruct] saved: results/v2_last/reconstruction_stage3_expbest/reconstruction_residuals.png
+[reconstruct] saved: results/v2_last/reconstruction_stage3_expbest/displacement_from_equilibrium.png
