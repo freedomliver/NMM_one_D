@@ -1,0 +1,29 @@
+[gen] using empirical noise profile: experiments/prepump_joint_train_v2/noise_profile_joint_train_v2.npz (mean=0.01937, max=0.16162)
+[gen] *** DELTA_SM MODE: training on ΔsM = sM(struct) - sM(equil) ***
+[gen] *** NO DRIFT: disabling low-frequency drift noise ***
+[gen] *** TRUNCATE S: s=[0.5, 10.0], 431 pts (was 681) ***
+[gen] === Generating train set: 60000 samples ===
+[gen] ΔsM mode: sM_ground computed (std in [1.5,9] = 0.8074)
+[gen] noise_gauss_std range: [0.002, 0.02]
+[gen]    10000/60000 ( 16.7%) | rejected=323 accept=96.9% | 1002 samples/s | elapsed=10s ETA=50s | RSS=310MB
+[gen]    10008/60000 ( 16.7%) | rate=1001/s ETA=50s | RSS=310MB (buf=8)
+[gen]    20000/60000 ( 33.3%) | rejected=663 accept=96.8% | 1015 samples/s | elapsed=20s ETA=39s | RSS=314MB
+[gen]    20321/60000 ( 33.9%) | rate=1016/s ETA=39s | RSS=314MB (buf=321)
+[gen]    30000/60000 ( 50.0%) | rejected=1018 accept=96.7% | 1021 samples/s | elapsed=29s ETA=29s | RSS=316MB
+[gen]    30686/60000 ( 51.1%) | rate=1023/s ETA=29s | RSS=316MB (buf=686)
+[gen]    40000/60000 ( 66.7%) | rejected=1363 accept=96.7% | 1025 samples/s | elapsed=39s ETA=20s | RSS=316MB
+[gen]    41078/60000 ( 68.5%) | rate=1027/s ETA=18s | RSS=316MB (buf=1078)
+[gen]    50000/60000 ( 83.3%) | rejected=1716 accept=96.7% | 1028 samples/s | elapsed=49s ETA=10s | RSS=317MB
+[gen]    51477/60000 ( 85.8%) | rate=1029/s ETA=8s | RSS=317MB (buf=1477)
+[gen]    60000/60000 (100.0%) | rejected=2060 accept=96.7% | 1029 samples/s | elapsed=58s ETA=0s | RSS=317MB
+[gen] DONE: 60000/60000 in 58.3s | RSS=318MB
+[gen] saved normalization: params/normalization_prepump_joint_v6_fix_syn.json
+[gen] === Generating val set: 10000 samples ===
+[gen] ΔsM mode: sM_ground computed (std in [1.5,9] = 0.8074)
+[gen] noise_gauss_std range: [0.002, 0.02]
+[gen]    10000/10000 (100.0%) | rejected=344 accept=96.7% | 1036 samples/s | elapsed=10s ETA=0s | RSS=318MB
+[gen] DONE: 10000/10000 in 9.7s | RSS=318MB
+[gen] ALL DONE.
+[gen]   train: file_training_data/train_NMM_prepump_joint_v6_fix_syn.h5
+[gen]   val:   file_training_data/val_NMM_prepump_joint_v6_fix.h5
+[gen]   norm:  params/normalization_prepump_joint_v6_fix_syn.json

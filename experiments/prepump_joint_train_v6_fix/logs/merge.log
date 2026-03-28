@@ -1,0 +1,4 @@
+[merge] exp labels regenerated from exp_h5 equilibrium (exp_dim=8, train_dim=8)
+[merge] synthetic=60000 exp_raw=1400 exp_repeat=2 exp_merged=2800 total=62800
+[merge] saved train -> file_training_data/train_NMM_prepump_joint_v6_fix.h5
+[merge] saved norm  -> params/normalization_prepump_joint_v6_fix.json

@@ -1,0 +1,10 @@
+[reconstruct_relaxed] loaded: experiments/prepump_joint_train_v6_fix/inference_epoch013_alpha015.npz, shape=(45, 8)
+[reconstruct_relaxed] success: 45/45 time points
+[reconstruct_relaxed] fallback recovered: 6 time points
+[reconstruct_relaxed] bootstrap trajectories: 200 samples
+[reconstruct_relaxed] bootstrap disp std | N3 mean/max = 0.0438/0.0895 A, C5 mean/max = 0.3896/0.9148 A
+[reconstruct] saved: experiments/prepump_joint_train_v6_fix/reconstruction_epoch013_alpha015_relaxed/structure_snapshots.png
+[reconstruct] saved: experiments/prepump_joint_train_v6_fix/reconstruction_epoch013_alpha015_relaxed/coordinate_trajectories.png
+[reconstruct] saved: experiments/prepump_joint_train_v6_fix/reconstruction_epoch013_alpha015_relaxed/reconstruction_residuals.png
+[reconstruct] saved: experiments/prepump_joint_train_v6_fix/reconstruction_epoch013_alpha015_relaxed/displacement_from_equilibrium.png
+[reconstruct] saved: experiments/prepump_joint_train_v6_fix/reconstruction_epoch013_alpha015_relaxed/trajectory_projections.png

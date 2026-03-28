@@ -1,0 +1,363 @@
+[train] device=mps, model=v2
+[data] Loading file_training_data/train_NMM_prepump_joint_v6_fix.h5...
+[data]   raw shape: x=(62800, 431), y=(62800, 8)
+[data]   normalized, tensor shapes: x=torch.Size([62800, 1, 431]), y=torch.Size([62800, 8])
+[data] Loading file_training_data/val_NMM_prepump_joint_v6_fix.h5...
+[data]   raw shape: x=(10000, 431), y=(10000, 8)
+[data]   normalized, tensor shapes: x=torch.Size([10000, 1, 431]), y=torch.Size([10000, 8])
+[train] train=62800, val=10000
+[train] model params: 2,126,088
+[train] Starting training loop...
+[train] ep1 starting...
+  ep1 [50/561] loss=0.422287 lr=4.46e-06
+  ep1 [100/561] loss=0.411642 lr=8.91e-06
+  ep1 [150/561] loss=0.365144 lr=1.34e-05
+  ep1 [200/561] loss=0.284087 lr=1.78e-05
+  ep1 [250/561] loss=0.207752 lr=2.23e-05
+  ep1 [300/561] loss=0.195397 lr=2.67e-05
+  ep1 [350/561] loss=0.189652 lr=3.12e-05
+  ep1 [400/561] loss=0.185227 lr=3.57e-05
+  ep1 [450/561] loss=0.177051 lr=4.01e-05
+  ep1 [500/561] loss=0.164364 lr=4.46e-05
+  ep1 [550/561] loss=0.158712 lr=4.90e-05
+  ep1 [561/561] loss=0.155994 lr=5.00e-05
+[ep 001/22] train_loss=0.249028 | val_mse=0.149014 val_mae=0.1368A key_mae=0.1079A | O-N=0.0924 O-C5=0.1108 N-C5=0.1204 N-C2=0.1027 N-C4=0.1015 C5-C2=0.1720 C5-C4=0.1768 h_C5_signed=0.2180 | 185.7s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_001.pt
+[train] ep2 starting...
+  ep2 [50/561] loss=0.148479 lr=5.45e-05
+  ep2 [100/561] loss=0.138534 lr=5.89e-05
+  ep2 [150/561] loss=0.132923 lr=6.34e-05
+  ep2 [200/561] loss=0.130780 lr=6.78e-05
+  ep2 [250/561] loss=0.126682 lr=7.23e-05
+  ep2 [300/561] loss=0.124815 lr=7.67e-05
+  ep2 [350/561] loss=0.124812 lr=8.12e-05
+  ep2 [400/561] loss=0.119269 lr=8.57e-05
+  ep2 [450/561] loss=0.121211 lr=9.01e-05
+  ep2 [500/561] loss=0.115404 lr=9.46e-05
+  ep2 [550/561] loss=0.117958 lr=9.90e-05
+  ep2 [561/561] loss=0.117002 lr=1.00e-04
+[ep 002/22] train_loss=0.127106 | val_mse=0.121022 val_mae=0.1178A key_mae=0.0838A | O-N=0.0539 O-C5=0.0974 N-C5=0.1002 N-C2=0.0951 N-C4=0.0946 C5-C2=0.1767 C5-C4=0.1759 h_C5_signed=0.1483 | 220.4s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_002.pt
+[train] ep3 starting...
+  ep3 [50/561] loss=0.116355 lr=1.04e-04
+  ep3 [100/561] loss=0.116575 lr=1.09e-04
+  ep3 [150/561] loss=0.113474 lr=1.13e-04
+  ep3 [200/561] loss=0.117794 lr=1.18e-04
+  ep3 [250/561] loss=0.114470 lr=1.22e-04
+  ep3 [300/561] loss=0.112703 lr=1.27e-04
+  ep3 [350/561] loss=0.115253 lr=1.31e-04
+  ep3 [400/561] loss=0.112763 lr=1.36e-04
+  ep3 [450/561] loss=0.110776 lr=1.40e-04
+  ep3 [500/561] loss=0.112983 lr=1.45e-04
+  ep3 [550/561] loss=0.112295 lr=1.49e-04
+  ep3 [561/561] loss=0.112316 lr=1.50e-04
+[ep 003/22] train_loss=0.114100 | val_mse=0.111024 val_mae=0.1056A key_mae=0.0586A | O-N=0.0455 O-C5=0.0491 N-C5=0.0811 N-C2=0.0937 N-C4=0.0931 C5-C2=0.1714 C5-C4=0.1686 h_C5_signed=0.1423 | 225.3s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_003.pt
+[train] ep4 starting...
+  ep4 [50/561] loss=0.109086 lr=1.50e-04
+  ep4 [100/561] loss=0.110476 lr=1.50e-04
+  ep4 [150/561] loss=0.109171 lr=1.50e-04
+  ep4 [200/561] loss=0.109341 lr=1.50e-04
+  ep4 [250/561] loss=0.109745 lr=1.50e-04
+  ep4 [300/561] loss=0.103502 lr=1.50e-04
+  ep4 [350/561] loss=0.107467 lr=1.50e-04
+  ep4 [400/561] loss=0.107599 lr=1.49e-04
+  ep4 [450/561] loss=0.103616 lr=1.49e-04
+  ep4 [500/561] loss=0.106049 lr=1.49e-04
+  ep4 [550/561] loss=0.103789 lr=1.49e-04
+  ep4 [561/561] loss=0.101657 lr=1.49e-04
+[ep 004/22] train_loss=0.107048 | val_mse=0.106183 val_mae=0.1006A key_mae=0.0510A | O-N=0.0392 O-C5=0.0503 N-C5=0.0636 N-C2=0.0930 N-C4=0.0921 C5-C2=0.1657 C5-C4=0.1656 h_C5_signed=0.1350 | 235.8s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_004.pt
+[train] ep5 starting...
+  ep5 [50/561] loss=0.105184 lr=1.49e-04
+  ep5 [100/561] loss=0.104362 lr=1.49e-04
+  ep5 [150/561] loss=0.101992 lr=1.48e-04
+  ep5 [200/561] loss=0.103492 lr=1.48e-04
+  ep5 [250/561] loss=0.103857 lr=1.48e-04
+  ep5 [300/561] loss=0.103716 lr=1.48e-04
+  ep5 [350/561] loss=0.102180 lr=1.47e-04
+  ep5 [400/561] loss=0.104798 lr=1.47e-04
+  ep5 [450/561] loss=0.103248 lr=1.47e-04
+  ep5 [500/561] loss=0.102523 lr=1.46e-04
+  ep5 [550/561] loss=0.101018 lr=1.46e-04
+  ep5 [561/561] loss=0.101150 lr=1.46e-04
+[ep 005/22] train_loss=0.103261 | val_mse=0.101421 val_mae=0.0938A key_mae=0.0462A | O-N=0.0330 O-C5=0.0465 N-C5=0.0589 N-C2=0.0919 N-C4=0.0918 C5-C2=0.1643 C5-C4=0.1630 h_C5_signed=0.1006 | 234.8s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_005.pt
+[train] ep6 starting...
+  ep6 [50/561] loss=0.100837 lr=1.46e-04
+  ep6 [100/561] loss=0.100301 lr=1.45e-04
+  ep6 [150/561] loss=0.101185 lr=1.45e-04
+  ep6 [200/561] loss=0.098830 lr=1.44e-04
+  ep6 [250/561] loss=0.099033 lr=1.44e-04
+  ep6 [300/561] loss=0.098474 lr=1.44e-04
+  ep6 [350/561] loss=0.098590 lr=1.43e-04
+  ep6 [400/561] loss=0.099717 lr=1.43e-04
+  ep6 [450/561] loss=0.104438 lr=1.42e-04
+  ep6 [500/561] loss=0.098638 lr=1.42e-04
+  ep6 [550/561] loss=0.099525 lr=1.41e-04
+  ep6 [561/561] loss=0.099216 lr=1.41e-04
+[ep 006/22] train_loss=0.099874 | val_mse=0.100966 val_mae=0.0949A key_mae=0.0507A | O-N=0.0308 O-C5=0.0683 N-C5=0.0531 N-C2=0.0916 N-C4=0.0915 C5-C2=0.1645 C5-C4=0.1664 h_C5_signed=0.0927 | 251.3s
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_006.pt
+[train] ep7 starting...
+  ep7 [50/561] loss=0.100004 lr=1.40e-04
+  ep7 [100/561] loss=0.099184 lr=1.40e-04
+  ep7 [150/561] loss=0.098588 lr=1.39e-04
+  ep7 [200/561] loss=0.097487 lr=1.39e-04
+  ep7 [250/561] loss=0.099012 lr=1.38e-04
+  ep7 [300/561] loss=0.098377 lr=1.38e-04
+  ep7 [350/561] loss=0.097030 lr=1.37e-04
+  ep7 [400/561] loss=0.097026 lr=1.36e-04
+  ep7 [450/561] loss=0.099154 lr=1.36e-04
+  ep7 [500/561] loss=0.097499 lr=1.35e-04
+  ep7 [550/561] loss=0.096793 lr=1.34e-04
+  ep7 [561/561] loss=0.098521 lr=1.34e-04
+[ep 007/22] train_loss=0.098216 | val_mse=0.100823 val_mae=0.0932A key_mae=0.0454A | O-N=0.0318 O-C5=0.0490 N-C5=0.0554 N-C2=0.0916 N-C4=0.0916 C5-C2=0.1648 C5-C4=0.1642 h_C5_signed=0.0970 | 262.3s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_007.pt
+[train] ep8 starting...
+  ep8 [50/561] loss=0.098024 lr=1.34e-04
+  ep8 [100/561] loss=0.098425 lr=1.33e-04
+  ep8 [150/561] loss=0.099163 lr=1.32e-04
+  ep8 [200/561] loss=0.096038 lr=1.31e-04
+  ep8 [250/561] loss=0.098121 lr=1.31e-04
+  ep8 [300/561] loss=0.095865 lr=1.30e-04
+  ep8 [350/561] loss=0.098042 lr=1.29e-04
+  ep8 [400/561] loss=0.098956 lr=1.28e-04
+  ep8 [450/561] loss=0.093789 lr=1.28e-04
+  ep8 [500/561] loss=0.095187 lr=1.27e-04
+  ep8 [550/561] loss=0.096572 lr=1.26e-04
+  ep8 [561/561] loss=0.097465 lr=1.26e-04
+[ep 008/22] train_loss=0.097194 | val_mse=0.097799 val_mae=0.0878A key_mae=0.0372A | O-N=0.0279 O-C5=0.0330 N-C5=0.0507 N-C2=0.0912 N-C4=0.0909 C5-C2=0.1618 C5-C4=0.1617 h_C5_signed=0.0852 | 256.1s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_008.pt
+[train] ep9 starting...
+  ep9 [50/561] loss=0.095143 lr=1.25e-04
+  ep9 [100/561] loss=0.096148 lr=1.24e-04
+  ep9 [150/561] loss=0.098688 lr=1.23e-04
+  ep9 [200/561] loss=0.096682 lr=1.22e-04
+  ep9 [250/561] loss=0.096677 lr=1.22e-04
+  ep9 [300/561] loss=0.094731 lr=1.21e-04
+  ep9 [350/561] loss=0.094441 lr=1.20e-04
+  ep9 [400/561] loss=0.095172 lr=1.19e-04
+  ep9 [450/561] loss=0.095352 lr=1.18e-04
+  ep9 [500/561] loss=0.095846 lr=1.17e-04
+  ep9 [550/561] loss=0.093987 lr=1.16e-04
+  ep9 [561/561] loss=0.094102 lr=1.16e-04
+[ep 009/22] train_loss=0.095709 | val_mse=0.098567 val_mae=0.0891A key_mae=0.0402A | O-N=0.0282 O-C5=0.0357 N-C5=0.0566 N-C2=0.0908 N-C4=0.0915 C5-C2=0.1616 C5-C4=0.1619 h_C5_signed=0.0866 | 235.3s
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_009.pt
+[train] ep10 starting...
+  ep10 [50/561] loss=0.094432 lr=1.15e-04
+  ep10 [100/561] loss=0.094668 lr=1.14e-04
+  ep10 [150/561] loss=0.095031 lr=1.13e-04
+  ep10 [200/561] loss=0.095041 lr=1.12e-04
+  ep10 [250/561] loss=0.096138 lr=1.11e-04
+  ep10 [300/561] loss=0.096013 lr=1.10e-04
+  ep10 [350/561] loss=0.093346 lr=1.09e-04
+  ep10 [400/561] loss=0.095996 lr=1.08e-04
+  ep10 [450/561] loss=0.093789 lr=1.07e-04
+  ep10 [500/561] loss=0.096001 lr=1.06e-04
+  ep10 [550/561] loss=0.094672 lr=1.05e-04
+  ep10 [561/561] loss=0.093502 lr=1.05e-04
+[ep 010/22] train_loss=0.094898 | val_mse=0.096490 val_mae=0.0845A key_mae=0.0315A | O-N=0.0249 O-C5=0.0258 N-C5=0.0438 N-C2=0.0908 N-C4=0.0909 C5-C2=0.1611 C5-C4=0.1608 h_C5_signed=0.0781 | 236.2s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_010.pt
+[train] ep11 starting...
+  ep11 [50/561] loss=0.093803 lr=1.04e-04
+  ep11 [100/561] loss=0.097112 lr=1.03e-04
+  ep11 [150/561] loss=0.094795 lr=1.02e-04
+  ep11 [200/561] loss=0.091631 lr=1.01e-04
+  ep11 [250/561] loss=0.095135 lr=1.00e-04
+  ep11 [300/561] loss=0.093904 lr=9.89e-05
+  ep11 [350/561] loss=0.093813 lr=9.79e-05
+  ep11 [400/561] loss=0.093168 lr=9.68e-05
+  ep11 [450/561] loss=0.091942 lr=9.58e-05
+  ep11 [500/561] loss=0.095590 lr=9.47e-05
+  ep11 [550/561] loss=0.093666 lr=9.36e-05
+  ep11 [561/561] loss=0.092459 lr=9.34e-05
+[ep 011/22] train_loss=0.094026 | val_mse=0.098030 val_mae=0.0895A key_mae=0.0425A | O-N=0.0258 O-C5=0.0442 N-C5=0.0574 N-C2=0.0906 N-C4=0.0910 C5-C2=0.1644 C5-C4=0.1639 h_C5_signed=0.0791 | 234.3s
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_011.pt
+[train] ep12 starting...
+  ep12 [50/561] loss=0.094314 lr=9.23e-05
+  ep12 [100/561] loss=0.092369 lr=9.13e-05
+  ep12 [150/561] loss=0.091973 lr=9.02e-05
+  ep12 [200/561] loss=0.094557 lr=8.91e-05
+  ep12 [250/561] loss=0.092851 lr=8.80e-05
+  ep12 [300/561] loss=0.094604 lr=8.69e-05
+  ep12 [350/561] loss=0.094066 lr=8.58e-05
+  ep12 [400/561] loss=0.093860 lr=8.47e-05
+  ep12 [450/561] loss=0.091199 lr=8.36e-05
+  ep12 [500/561] loss=0.094227 lr=8.25e-05
+  ep12 [550/561] loss=0.093286 lr=8.14e-05
+  ep12 [561/561] loss=0.093503 lr=8.12e-05
+[ep 012/22] train_loss=0.093439 | val_mse=0.097180 val_mae=0.0861A key_mae=0.0356A | O-N=0.0269 O-C5=0.0296 N-C5=0.0504 N-C2=0.0909 N-C4=0.0911 C5-C2=0.1620 C5-C4=0.1613 h_C5_signed=0.0764 | 235.3s
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_012.pt
+[train] ep13 starting...
+  ep13 [50/561] loss=0.091473 lr=8.01e-05
+  ep13 [100/561] loss=0.091724 lr=7.90e-05
+  ep13 [150/561] loss=0.093321 lr=7.79e-05
+  ep13 [200/561] loss=0.094459 lr=7.68e-05
+  ep13 [250/561] loss=0.091913 lr=7.57e-05
+  ep13 [300/561] loss=0.092156 lr=7.46e-05
+  ep13 [350/561] loss=0.094046 lr=7.35e-05
+  ep13 [400/561] loss=0.093063 lr=7.24e-05
+  ep13 [450/561] loss=0.094635 lr=7.13e-05
+  ep13 [500/561] loss=0.091564 lr=7.02e-05
+  ep13 [550/561] loss=0.090816 lr=6.90e-05
+  ep13 [561/561] loss=0.090927 lr=6.88e-05
+[ep 013/22] train_loss=0.092679 | val_mse=0.096747 val_mae=0.0854A key_mae=0.0341A | O-N=0.0269 O-C5=0.0316 N-C5=0.0437 N-C2=0.0911 N-C4=0.0907 C5-C2=0.1612 C5-C4=0.1615 h_C5_signed=0.0762 | 230.9s
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_013.pt
+[train] ep14 starting...
+  ep14 [50/561] loss=0.092925 lr=6.77e-05
+  ep14 [100/561] loss=0.091828 lr=6.66e-05
+  ep14 [150/561] loss=0.091239 lr=6.55e-05
+  ep14 [200/561] loss=0.090873 lr=6.44e-05
+  ep14 [250/561] loss=0.093225 lr=6.33e-05
+  ep14 [300/561] loss=0.091424 lr=6.22e-05
+  ep14 [350/561] loss=0.094056 lr=6.11e-05
+  ep14 [400/561] loss=0.092144 lr=6.01e-05
+  ep14 [450/561] loss=0.089625 lr=5.90e-05
+  ep14 [500/561] loss=0.094031 lr=5.79e-05
+  ep14 [550/561] loss=0.092549 lr=5.68e-05
+  ep14 [561/561] loss=0.092640 lr=5.66e-05
+[ep 014/22] train_loss=0.092184 | val_mse=0.095801 val_mae=0.0834A key_mae=0.0308A | O-N=0.0248 O-C5=0.0260 N-C5=0.0415 N-C2=0.0907 N-C4=0.0907 C5-C2=0.1611 C5-C4=0.1609 h_C5_signed=0.0718 | 232.0s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_014.pt
+[train] ep15 starting...
+  ep15 [50/561] loss=0.091424 lr=5.55e-05
+  ep15 [100/561] loss=0.089502 lr=5.45e-05
+  ep15 [150/561] loss=0.091229 lr=5.34e-05
+  ep15 [200/561] loss=0.089364 lr=5.23e-05
+  ep15 [250/561] loss=0.091692 lr=5.13e-05
+  ep15 [300/561] loss=0.091049 lr=5.02e-05
+  ep15 [350/561] loss=0.091629 lr=4.92e-05
+  ep15 [400/561] loss=0.093598 lr=4.82e-05
+  ep15 [450/561] loss=0.091856 lr=4.71e-05
+  ep15 [500/561] loss=0.091399 lr=4.61e-05
+  ep15 [550/561] loss=0.092187 lr=4.51e-05
+  ep15 [561/561] loss=0.092280 lr=4.49e-05
+[ep 015/22] train_loss=0.091406 | val_mse=0.095398 val_mae=0.0821A key_mae=0.0296A | O-N=0.0226 O-C5=0.0239 N-C5=0.0422 N-C2=0.0906 N-C4=0.0906 C5-C2=0.1604 C5-C4=0.1600 h_C5_signed=0.0660 | 231.3s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_015.pt
+[train] ep16 starting...
+  ep16 [50/561] loss=0.093030 lr=4.39e-05
+  ep16 [100/561] loss=0.090415 lr=4.29e-05
+  ep16 [150/561] loss=0.092625 lr=4.19e-05
+  ep16 [200/561] loss=0.090167 lr=4.09e-05
+  ep16 [250/561] loss=0.090465 lr=3.99e-05
+  ep16 [300/561] loss=0.089591 lr=3.89e-05
+  ep16 [350/561] loss=0.089417 lr=3.80e-05
+  ep16 [400/561] loss=0.090284 lr=3.70e-05
+  ep16 [450/561] loss=0.090871 lr=3.61e-05
+  ep16 [500/561] loss=0.089731 lr=3.51e-05
+  ep16 [550/561] loss=0.092927 lr=3.42e-05
+  ep16 [561/561] loss=0.093527 lr=3.40e-05
+[ep 016/22] train_loss=0.090935 | val_mse=0.094654 val_mae=0.0814A key_mae=0.0279A | O-N=0.0212 O-C5=0.0234 N-C5=0.0389 N-C2=0.0903 N-C4=0.0905 C5-C2=0.1606 C5-C4=0.1602 h_C5_signed=0.0662 | 232.4s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_016.pt
+[train] ep17 starting...
+  ep17 [50/561] loss=0.090269 lr=3.31e-05
+  ep17 [100/561] loss=0.091858 lr=3.21e-05
+  ep17 [150/561] loss=0.090086 lr=3.12e-05
+  ep17 [200/561] loss=0.089809 lr=3.04e-05
+  ep17 [250/561] loss=0.089736 lr=2.95e-05
+  ep17 [300/561] loss=0.089161 lr=2.86e-05
+  ep17 [350/561] loss=0.092659 lr=2.77e-05
+  ep17 [400/561] loss=0.091781 lr=2.69e-05
+  ep17 [450/561] loss=0.088619 lr=2.60e-05
+  ep17 [500/561] loss=0.090155 lr=2.52e-05
+  ep17 [550/561] loss=0.089239 lr=2.44e-05
+  ep17 [561/561] loss=0.089744 lr=2.42e-05
+[ep 017/22] train_loss=0.090377 | val_mse=0.094739 val_mae=0.0812A key_mae=0.0275A | O-N=0.0210 O-C5=0.0221 N-C5=0.0395 N-C2=0.0903 N-C4=0.0905 C5-C2=0.1607 C5-C4=0.1601 h_C5_signed=0.0652 | 231.8s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_017.pt
+[train] ep18 starting...
+  ep18 [50/561] loss=0.091100 lr=2.34e-05
+  ep18 [100/561] loss=0.091388 lr=2.26e-05
+  ep18 [150/561] loss=0.090915 lr=2.18e-05
+  ep18 [200/561] loss=0.089408 lr=2.10e-05
+  ep18 [250/561] loss=0.088229 lr=2.03e-05
+  ep18 [300/561] loss=0.088230 lr=1.95e-05
+  ep18 [350/561] loss=0.092563 lr=1.88e-05
+  ep18 [400/561] loss=0.089313 lr=1.81e-05
+  ep18 [450/561] loss=0.090317 lr=1.74e-05
+  ep18 [500/561] loss=0.090555 lr=1.67e-05
+  ep18 [550/561] loss=0.088275 lr=1.60e-05
+  ep18 [561/561] loss=0.087819 lr=1.58e-05
+[ep 018/22] train_loss=0.089975 | val_mse=0.094370 val_mae=0.0805A key_mae=0.0265A | O-N=0.0201 O-C5=0.0218 N-C5=0.0376 N-C2=0.0902 N-C4=0.0905 C5-C2=0.1607 C5-C4=0.1601 h_C5_signed=0.0630 | 232.0s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_018.pt
+[train] ep19 starting...
+  ep19 [50/561] loss=0.089614 lr=1.51e-05
+  ep19 [100/561] loss=0.090044 lr=1.45e-05
+  ep19 [150/561] loss=0.090653 lr=1.38e-05
+  ep19 [200/561] loss=0.090357 lr=1.32e-05
+  ep19 [250/561] loss=0.090181 lr=1.26e-05
+  ep19 [300/561] loss=0.088000 lr=1.20e-05
+  ep19 [350/561] loss=0.089101 lr=1.14e-05
+  ep19 [400/561] loss=0.088846 lr=1.08e-05
+  ep19 [450/561] loss=0.090811 lr=1.02e-05
+  ep19 [500/561] loss=0.089508 lr=9.69e-06
+  ep19 [550/561] loss=0.088926 lr=9.16e-06
+  ep19 [561/561] loss=0.089742 lr=9.04e-06
+[ep 019/22] train_loss=0.089659 | val_mse=0.094181 val_mae=0.0802A key_mae=0.0263A | O-N=0.0197 O-C5=0.0221 N-C5=0.0369 N-C2=0.0902 N-C4=0.0905 C5-C2=0.1605 C5-C4=0.1603 h_C5_signed=0.0615 | 231.5s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_019.pt
+[train] ep20 starting...
+  ep20 [50/561] loss=0.091329 lr=8.52e-06
+  ep20 [100/561] loss=0.088901 lr=8.02e-06
+  ep20 [150/561] loss=0.088909 lr=7.53e-06
+  ep20 [200/561] loss=0.089277 lr=7.05e-06
+  ep20 [250/561] loss=0.089800 lr=6.59e-06
+  ep20 [300/561] loss=0.087717 lr=6.14e-06
+  ep20 [350/561] loss=0.089616 lr=5.71e-06
+  ep20 [400/561] loss=0.089530 lr=5.30e-06
+  ep20 [450/561] loss=0.089779 lr=4.90e-06
+  ep20 [500/561] loss=0.089542 lr=4.51e-06
+  ep20 [550/561] loss=0.088939 lr=4.14e-06
+  ep20 [561/561] loss=0.088612 lr=4.06e-06
+[ep 020/22] train_loss=0.089422 | val_mse=0.094068 val_mae=0.0796A key_mae=0.0254A | O-N=0.0195 O-C5=0.0206 N-C5=0.0360 N-C2=0.0902 N-C4=0.0904 C5-C2=0.1606 C5-C4=0.1597 h_C5_signed=0.0597 | 230.2s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_020.pt
+[train] ep21 starting...
+  ep21 [50/561] loss=0.090424 lr=3.71e-06
+  ep21 [100/561] loss=0.087145 lr=3.38e-06
+  ep21 [150/561] loss=0.089009 lr=3.06e-06
+  ep21 [200/561] loss=0.087127 lr=2.75e-06
+  ep21 [250/561] loss=0.089774 lr=2.46e-06
+  ep21 [300/561] loss=0.090409 lr=2.19e-06
+  ep21 [350/561] loss=0.088729 lr=1.93e-06
+  ep21 [400/561] loss=0.089325 lr=1.69e-06
+  ep21 [450/561] loss=0.088629 lr=1.47e-06
+  ep21 [500/561] loss=0.089977 lr=1.26e-06
+  ep21 [550/561] loss=0.090368 lr=1.06e-06
+  ep21 [561/561] loss=0.089707 lr=1.02e-06
+[ep 021/22] train_loss=0.089230 | val_mse=0.094008 val_mae=0.0794A key_mae=0.0251A | O-N=0.0193 O-C5=0.0202 N-C5=0.0358 N-C2=0.0902 N-C4=0.0904 C5-C2=0.1604 C5-C4=0.1598 h_C5_signed=0.0594 | 228.5s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_021.pt
+[train] ep22 starting...
+  ep22 [50/561] loss=0.089231 lr=8.49e-07
+  ep22 [100/561] loss=0.088870 lr=6.91e-07
+  ep22 [150/561] loss=0.089838 lr=5.50e-07
+  ep22 [200/561] loss=0.090218 lr=4.24e-07
+  ep22 [250/561] loss=0.088976 lr=3.15e-07
+  ep22 [300/561] loss=0.090287 lr=2.22e-07
+  ep22 [350/561] loss=0.089231 lr=1.45e-07
+  ep22 [400/561] loss=0.089535 lr=8.44e-08
+  ep22 [450/561] loss=0.089339 lr=4.01e-08
+  ep22 [500/561] loss=0.088274 lr=1.21e-08
+  ep22 [550/561] loss=0.086915 lr=3.94e-10
+  ep22 [561/561] loss=0.087271 lr=0.00e+00
+[ep 022/22] train_loss=0.089136 | val_mse=0.094028 val_mae=0.0794A key_mae=0.0250A | O-N=0.0193 O-C5=0.0200 N-C5=0.0357 N-C2=0.0902 N-C4=0.0905 C5-C2=0.1604 C5-C4=0.1598 h_C5_signed=0.0594 | 226.9s *BEST_VAL*
+[train] resume ckpt saved -> nmm_prepump_joint_train_v6_fix.resume.pt
+[train] epoch ckpt saved -> experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_022.pt
+[train] Done. Best val MAE: 0.0794 A, saved to params/models/nmm_prepump_joint_train_v6_fix.pt

@@ -2,8 +2,7 @@
 生成 NMM 训练数据（.h5）并保存归一化参数（.json）
 
 V2_last 默认配置：
-- `--delta_sm`
-- `--equil_fraction 0.30`
+- 固定 `delta_sm`
 - `--no_drift`
 - 固定 `trunc` (431 pts)
 
@@ -11,14 +10,14 @@ V2_last 默认配置：
 - 实时 flush 输出，随时可见进度
 - 分块写入 h5，避免大量数据堆在内存
 - 打印内存使用，方便监控
-- 支持 --delta_sm 模式：生成差分信号 ΔsM = sM(structure) - sM(equilibrium)
+- 固定生成差分信号 ΔsM = sM(structure) - sM(equilibrium)
   该模式与实验泵浦-探测数据约定一致（实验 s0 信号为差分信号）
+- 若提供经验噪声包络，则按实验 pre-pump 统计的 sigma(s) 加噪
 
-差分模式 (--delta_sm) 说明：
+差分模式说明：
   - 地态平衡结构 → ΔsM = 0（无信号）
   - 激发态结构 → ΔsM ≠ 0（结构变化编码在差分信号中）
   - 推理时实验数据直接以 ΔsM 形式喂入，无需加回地态信号
-  - 需同时提高噪声量级匹配实验噪底：--noise_std_max 0.20
 """
 
 from __future__ import annotations
@@ -54,9 +53,8 @@ def generate_dataset_to_h5(
     seed: int,
     chunk_size: int = 10000,
     max_tries_factor: int = 50,
-    delta_sm: bool = False,
-    noise_std_max: float | None = None,
     equil_fraction: float = 0.0,
+    noise_profile_full: np.ndarray | None = None,
 ):
     """
     分块生成数据并直接写入 h5 文件，不在内存中保留全部数据。
@@ -68,17 +66,13 @@ def generate_dataset_to_h5(
     s_len = cfg.S_LEN_TRUNC
     s_mask = (cfg.S_GRID >= cfg.S_TRUNC_MIN) & (cfg.S_GRID <= cfg.S_TRUNC_MAX)
 
-    # 如果是差分模式，预计算平衡态信号一次
-    sM_ground = None
-    if delta_sm:
-        coords_eq, _, elems_eq = fn.build_full_coords_with_locked_H(cfg.NMM_BASE_COORDS_ANG)
-        sM_ground = fn.compute_1d_scattering_signal(coords_eq, elems_eq)
-        log(f"[gen] ΔsM mode: sM_ground computed (std in [1.5,9] = "
-            f"{sM_ground[(cfg.S_GRID>=1.5)&(cfg.S_GRID<=9.)].std():.4f})")
+    # V2_last 主线固定差分模式，预计算平衡态信号一次
+    coords_eq, _, elems_eq = fn.build_full_coords_with_locked_H(cfg.NMM_BASE_COORDS_ANG)
+    sM_ground = fn.compute_1d_scattering_signal(coords_eq, elems_eq)
+    log(f"[gen] ΔsM mode: sM_ground computed (std in [1.5,9] = "
+        f"{sM_ground[(cfg.S_GRID>=1.5)&(cfg.S_GRID<=9.)].std():.4f})")
 
-    # 噪声参数可在运行时覆盖
-    noise_std_lo = cfg.NOISE_GAUSS_STD_RANGE[0]
-    noise_std_hi = cfg.NOISE_GAUSS_STD_RANGE[1] if noise_std_max is None else noise_std_max
+    noise_std_lo, noise_std_hi = cfg.NOISE_GAUSS_STD_RANGE
     log(f"[gen] noise_gauss_std range: [{noise_std_lo}, {noise_std_hi}]")
 
     max_tries = int(n_samples * max_tries_factor)
@@ -140,18 +134,8 @@ def generate_dataset_to_h5(
                     backbone = fn.generate_backbone_coords_from_dof(dof)
                 coords_all, _names, elems = fn.build_full_coords_with_locked_H(backbone)
                 signal = fn.compute_1d_scattering_signal(coords_all, elems)
-                # 差分模式：减去平衡态信号
-                if delta_sm and sM_ground is not None:
-                    signal = signal - sM_ground
-                # 噪声：支持临时覆盖 std 范围
-                if noise_std_max is not None:
-                    # 临时修改全局噪声范围
-                    orig_range = cfg.NOISE_GAUSS_STD_RANGE
-                    cfg.NOISE_GAUSS_STD_RANGE = (noise_std_lo, noise_std_hi)
-                    signal = fn.add_noise(signal, rng)
-                    cfg.NOISE_GAUSS_STD_RANGE = orig_range
-                else:
-                    signal = fn.add_noise(signal, rng)
+                signal = signal - sM_ground
+                signal = fn.add_noise(signal, rng, noise_profile=noise_profile_full)
                 label = fn.label_from_backbone(backbone)
             except Exception:
                 rejected += 1
@@ -233,32 +217,34 @@ def main():
     ap.add_argument("--val_h5", type=str, default=str(cfg.PATHS.val_h5))
     ap.add_argument("--norm_json", type=str, default=str(cfg.PATHS.norm_json))
     ap.add_argument("--chunk_size", type=int, default=10000)
-    ap.add_argument("--delta_sm", dest="delta_sm", action="store_true",
-                    help="生成差分信号 ΔsM = sM(struct) - sM(equil)（V2_last 默认开启）")
-    ap.add_argument("--absolute_sm", dest="delta_sm", action="store_false",
-                    help="Legacy: 生成绝对 sM 信号，而不是 ΔsM")
-    ap.add_argument("--noise_std_max", type=float, default=None,
-                    help="覆盖 NOISE_GAUSS_STD_RANGE 上界（推荐 0.20 配合 --delta_sm）")
+    ap.add_argument("--noise_profile_npz", type=str, default=None,
+                    help="实验 pre-pump 经验噪声包络 npz；若提供则使用 sigma_full")
     ap.add_argument("--equil_fraction", type=float, default=cfg.DEFAULT_EQUIL_FRACTION,
                     help="近平衡态样本比例 [0,1]，推荐 0.25-0.35 平衡训练分布")
     ap.add_argument("--no_drift", dest="no_drift", action="store_true",
                     help="关闭低频漂移噪声（V2_last 默认开启）")
     ap.add_argument("--with_drift", dest="no_drift", action="store_false",
                     help="Legacy: 保留低频漂移噪声")
-    ap.set_defaults(
-        delta_sm=cfg.DEFAULT_DELTA_SM,
-        no_drift=cfg.DEFAULT_NO_DRIFT,
-    )
+    ap.set_defaults(no_drift=cfg.DEFAULT_NO_DRIFT)
     args = ap.parse_args()
 
     train_h5 = Path(args.train_h5)
     val_h5 = Path(args.val_h5)
     norm_json = Path(args.norm_json)
+    noise_profile_full = None
+    if args.noise_profile_npz:
+        prof = np.load(args.noise_profile_npz)
+        noise_profile_full = np.asarray(prof["sigma_full"], dtype=np.float32)
+        if noise_profile_full.shape != cfg.S_GRID.shape:
+            raise ValueError(
+                f"sigma_full shape mismatch: got {noise_profile_full.shape}, expected {cfg.S_GRID.shape}"
+            )
+        log(
+            f"[gen] using empirical noise profile: {args.noise_profile_npz} "
+            f"(mean={noise_profile_full.mean():.5f}, max={noise_profile_full.max():.5f})"
+        )
 
-    if args.delta_sm:
-        log(f"[gen] *** DELTA_SM MODE: training on ΔsM = sM(struct) - sM(equil) ***")
-    if args.noise_std_max:
-        log(f"[gen] noise_std_max overridden to {args.noise_std_max}")
+    log(f"[gen] *** DELTA_SM MODE: training on ΔsM = sM(struct) - sM(equil) ***")
     if args.equil_fraction > 0:
         log(f"[gen] equil_fraction={args.equil_fraction:.2f} (near-equilibrium sampling)")
 
@@ -271,8 +257,7 @@ def main():
     log(f"[gen] === Generating train set: {args.train_n} samples ===")
     norm = generate_dataset_to_h5(
         train_h5, args.train_n, seed=args.seed, chunk_size=args.chunk_size,
-        delta_sm=args.delta_sm, noise_std_max=args.noise_std_max,
-        equil_fraction=args.equil_fraction,
+        equil_fraction=args.equil_fraction, noise_profile_full=noise_profile_full,
     )
 
     # 保存归一化参数（基于训练集统计）
@@ -282,8 +267,7 @@ def main():
     log(f"[gen] === Generating val set: {args.val_n} samples ===")
     generate_dataset_to_h5(
         val_h5, args.val_n, seed=args.seed + 1, chunk_size=args.chunk_size,
-        delta_sm=args.delta_sm, noise_std_max=args.noise_std_max,
-        equil_fraction=args.equil_fraction,
+        equil_fraction=args.equil_fraction, noise_profile_full=noise_profile_full,
     )
 
     log(f"[gen] ALL DONE.")

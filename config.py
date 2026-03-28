@@ -24,7 +24,7 @@ import numpy as np
 V2_LAST_TAG = "v2_last"
 DEFAULT_MODEL_VERSION = "v2"
 DEFAULT_DELTA_SM = True
-DEFAULT_EQUIL_FRACTION = 0.30
+DEFAULT_EQUIL_FRACTION = 0.0
 DEFAULT_NO_DRIFT = True
 DEFAULT_TRUNCATE_S = True
 
@@ -175,29 +175,43 @@ H_LOCKED_OFFSETS_ANG = {
 FIXED_ATOMS = ["C1", "C2", "C4", "C6", "O7"]
 MOVING_ATOMS = ["N3", "C5"]
 
-# 新采样策略（2026/3/12 修改）：
-# - N3：在 NO 中轴面上离中轴面 2Å，以原坐标为圆心半径 3.5Å 的圆柱内均匀随机采样
-# - C5：以原坐标为圆心的半径 5Å 的球体内均匀随机采样
-# 采样后限制：N-O 键长 < C2-O 键长（即 r_NO < r_C2O），否则丢弃
+# 当前主线采样策略（joint_train_v3）：
+# - N3：基态附近的小范围各向同性采样，保留较宽松的局部自由度
+# - C5：以参考方向为主轴的宽松偏置椭球采样，并混入少量局部各向同性采样
+# - NMM_pl.xyz / NMM_ax.xyz 只用于给 C5 主方向提供启发，不直接决定位移长度
+# - 采样后保留几何约束：r(N-O) < r(C5-O)
 
 GEN_N_SAMPLES_TRAIN = 20000  # 默认先小一点方便验证；你可改到 1_000_000
 GEN_N_SAMPLES_VAL = 2000
 GEN_RANDOM_SEED = 20260311
 
-# ========== N 原子采样参数（圆柱约束）==========
-# N3 在 NO 中轴面上离中轴面的距离（Å）【调试标记】
-GEN_N_CYLINDER_OFF_PLANE_ANG = 2.0
+# ========== N3 采样参数 ==========
+# N3：小范围各向同性采样；当前不引入强方向先验
+GEN_N_ISO_SIGMA_ANG = 0.14
+GEN_N_ISO_MAX_RADIUS_ANG = 0.45
 
-# N3 采样圆柱的半径（Å）【调试标记】
-GEN_N_CYLINDER_RADIUS_ANG = 2.0  # was 3.5; focused on relevant dynamics range
+# ========== C5 采样参数 ==========
+# C5：以参考方向为主轴的更宽松偏置椭球采样
+# joint_train_v3 继续保留少量局部各向同性分量，
+# 但进一步放宽主轴与侧向范围，提高大位移样本占比，避免实验动力学振幅被压得过小。
+GEN_C5_LOCAL_ISO_PROB = 0.10
+GEN_C5_LOCAL_ISO_SIGMA_ANG = 0.18
+GEN_C5_LOCAL_MAX_RADIUS_ANG = 0.45
 
-# ========== C5 原子采样参数（球体约束）==========
-# C5 采样球体的半径（Å）【调试标记】
-GEN_C5_SPHERE_RADIUS_ANG = 3.0  # was 5.0; caps N-C5 ~5 Å to match experimental range
+# a1 ~ Normal(main_mean, main_sigma) 后截断到 [main_min, main_max]
+# a2/a3 为两个垂直方向的零均值高斯扰动
+GEN_C5_MAIN_MEAN_ANG = 1.35
+GEN_C5_MAIN_SIGMA_ANG = 0.95
+GEN_C5_MAIN_MIN_ANG = 0.0
+GEN_C5_MAIN_MAX_ANG = 3.4
+
+GEN_C5_PERP_SIGMA_ANG = 0.65
+GEN_C5_NORMAL_SIGMA_ANG = 0.45
+GEN_C5_TOTAL_MAX_RADIUS_ANG = 3.8
 
 # ========== 采样后的键长约束 ==========
-# N-O 键长必须 < C5-O 键长（外面那个 C 原子），否则丢弃该样本
-# （这个约束在 generate_backbone_coords_from_dof 中实现）
+# N-O 键长必须 < C5-O 键长，否则丢弃该样本
+# （约束在 generate_backbone_coords_from_dof 中实现）
 GEN_CHECK_N_O_SHORTER_THAN_C5_O = True
 
 
@@ -241,17 +255,12 @@ NOISE_SPIKE_SCALE = 0.2
 
 
 # =========================
-# 标签定义（V2_last 主线：7 个距离）
+# 标签定义（当前主线：7 个距离 + C5 到刚性环平面的 signed height）
 # =========================
 
 LABEL_ATOMS = ["O7", "N3", "C5", "C2", "C4"]
-LABEL_PAIR_NAMES = ["O-N", "O-C5", "N-C5", "N-C2", "N-C4", "C5-C2", "C5-C4"]
-LABEL_FLAT_DIM = 7
-LEGACY_LABEL_NAME_MAP = {
-    3: LABEL_PAIR_NAMES[:3],
-    7: LABEL_PAIR_NAMES,
-    9: ["O-O", "O-N", "O-C5", "N-O", "N-N", "N-C5", "C5-O", "C5-N", "C5-C5"],
-}
+LABEL_PAIR_NAMES = ["O-N", "O-C5", "N-C5", "N-C2", "N-C4", "C5-C2", "C5-C4", "h_C5_signed"]
+LABEL_FLAT_DIM = 8
 
 
 # =========================

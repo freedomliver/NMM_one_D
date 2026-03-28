@@ -146,56 +146,161 @@ def circle_intersections_in_plane(
 @dataclass(frozen=True)
 class SampledDOF:
     """
-    新采样策略的参数（2026/3/12）：
-    - N_center, N_orth_dir：N3 在圆柱中的采样位置参数
-    - C5_offset：C5 相对其基态坐标的偏移向量
+    当前主线采样自由度：
+    - n_offset: N3 的小范围各向同性位移
+    - c5_offset: C5 的偏置椭球 / 局部各向同性位移
     """
-    n_center: np.ndarray  # (3,) - N 采样圆柱轴上的点（实际 N 将在此附近圆柱内）
-    n_radius_t: float     # [0, 1] - N 采样的圆柱半径归一化参数
-    n_angle_t: float      # [0, 2π) - N 采样的方位角
-    c5_offset: np.ndarray # (3,) - C5 相对基态的偏移（球体采样）
+    n_offset: np.ndarray
+    c5_offset: np.ndarray
+
+
+_REFERENCE_STATE_CACHE: Dict[str, np.ndarray] | None = None
+
+
+def _load_reference_state_xyz(name: str) -> Dict[str, np.ndarray]:
+    path = cfg.PATHS.root / "params" / "coords" / name
+    lines = path.read_text(encoding="utf-8").strip().splitlines()[2:]
+    atoms: List[str] = []
+    coords: List[List[float]] = []
+    for line in lines:
+        sp = line.split()
+        if sp[0] == "H":
+            continue
+        atoms.append(sp[0])
+        coords.append([float(sp[1]), float(sp[2]), float(sp[3])])
+    heavy = np.array(coords, dtype=np.float64)
+    idx_n = atoms.index("N")
+    idx_o = atoms.index("O")
+    carbons = [heavy[i] for i, a in enumerate(atoms) if a == "C"]
+    c5 = max(carbons, key=lambda c: float(c[2]))
+    ring = [c for c in carbons if not np.allclose(c, c5)]
+    upper = [c for c in ring if float(c[2]) >= 0.0]
+    lower = [c for c in ring if float(c[2]) < 0.0]
+    if len(upper) != 2 or len(lower) != 2:
+        raise ValueError(f"{name}: failed to identify ring carbons in mainline order")
+    c2 = max(upper, key=lambda c: float(c[0]))
+    c4 = min(upper, key=lambda c: float(c[0]))
+    c1 = max(lower, key=lambda c: float(c[0]))
+    c6 = min(lower, key=lambda c: float(c[0]))
+    return {
+        "C1": np.asarray(c1, dtype=np.float64),
+        "C2": np.asarray(c2, dtype=np.float64),
+        "N3": heavy[idx_n],
+        "C4": np.asarray(c4, dtype=np.float64),
+        "C5": np.asarray(c5, dtype=np.float64),
+        "C6": np.asarray(c6, dtype=np.float64),
+        "O7": heavy[idx_o],
+    }
+
+
+def _kabsch_align(moving: np.ndarray, target: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    moving = np.asarray(moving, dtype=np.float64)
+    target = np.asarray(target, dtype=np.float64)
+    moving_centroid = moving.mean(axis=0)
+    target_centroid = target.mean(axis=0)
+    moving_c = moving - moving_centroid
+    target_c = target - target_centroid
+    h = moving_c.T @ target_c
+    u, _s, vt = np.linalg.svd(h)
+    r = u @ vt
+    if np.linalg.det(r) < 0:
+        vt[-1, :] *= -1.0
+        r = u @ vt
+    t = target_centroid - moving_centroid @ r
+    aligned = moving @ r + t
+    return aligned, r, t
+
+
+def _reference_sampling_basis() -> Dict[str, np.ndarray]:
+    global _REFERENCE_STATE_CACHE
+    if _REFERENCE_STATE_CACHE is None:
+        # NMM_pl / NMM_ax 仅用于提取 C5 的参考方向。
+        # 它们先对齐到基态固定骨架，再只把方向信息用于采样偏置；
+        # 后续分子重建仍然以基态参考结构为准，不直接依赖这些位移数值。
+        anchor_labels = ["C1", "C2", "C4", "C6", "O7"]
+        eq = {
+            label: np.asarray(cfg.NMM_BASE_COORDS_ANG[cfg.NMM_ATOM_INDEX[label]], dtype=np.float64)
+            for label in ["C1", "C2", "N3", "C4", "C5", "C6", "O7"]
+        }
+        pl = _load_reference_state_xyz("NMM_pl.xyz")
+        ax = _load_reference_state_xyz("NMM_ax.xyz")
+        target_anchor = np.stack([eq[l] for l in anchor_labels], axis=0)
+        for state in (pl, ax):
+            moving_anchor = np.stack([state[l] for l in anchor_labels], axis=0)
+            _aligned, r, t = _kabsch_align(moving_anchor, target_anchor)
+            for key in state:
+                state[key] = state[key] @ r + t
+
+        c5_pl = pl["C5"] - eq["C5"]
+        c5_ax = ax["C5"] - eq["C5"]
+        e1 = unit(c5_pl + c5_ax)
+        diff = c5_ax - c5_pl
+        e2 = diff - np.dot(diff, e1) * e1
+        if float(np.linalg.norm(e2)) < 1e-8:
+            fallback = eq["C4"] - eq["C2"]
+            e2 = fallback - np.dot(fallback, e1) * e1
+        e2 = unit(e2)
+        e3 = unit(np.cross(e1, e2))
+        _REFERENCE_STATE_CACHE = {
+            "c5_pl": c5_pl,
+            "c5_ax": c5_ax,
+            "c5_e1": e1,
+            "c5_e2": e2,
+            "c5_e3": e3,
+        }
+    return _REFERENCE_STATE_CACHE
+
+
+def _sample_truncated_isotropic(
+    rng: np.random.Generator,
+    sigma: float,
+    max_radius: float,
+    max_tries: int = 256,
+) -> np.ndarray:
+    for _ in range(max_tries):
+        v = rng.normal(0.0, sigma, size=3).astype(np.float64)
+        if float(np.linalg.norm(v)) <= max_radius:
+            return v
+    v = rng.normal(0.0, sigma, size=3).astype(np.float64)
+    n = float(np.linalg.norm(v))
+    if n > max_radius and n > 1e-12:
+        v *= max_radius / n
+    return v
 
 
 def sample_dof(rng: np.random.Generator) -> SampledDOF:
     """
-    新采样策略：
-    1. 对 N3 进行圆柱采样：在 NO 中轴面上，离中轴面 GEN_N_CYLINDER_OFF_PLANE_ANG，
-       以原坐标为圆心、半径 GEN_N_CYLINDER_RADIUS_ANG 的圆柱内均匀随机采样。
-    2. 对 C5 进行球体采样：以原坐标为圆心、半径 GEN_C5_SPHERE_RADIUS_ANG 的球体内均匀随机采样。
-    
-    实际几何约束（包含 NO 中轴面定义等）延迟到 generate_backbone_coords_from_dof 中实现。
+    当前主线采样：
+    1. N3: 小范围各向同性采样
+    2. C5: 宽松偏置椭球 + 少量局部各向同性采样
     """
-    # 取基态 N3 坐标作为圆柱采样的中心
-    n_base = cfg.NMM_BASE_COORDS_ANG[cfg.NMM_ATOM_INDEX["N3"]]
-    
-    # N3 圆柱采样参数
-    # - 圆柱半径：从 0 到 GEN_N_CYLINDER_RADIUS_ANG 的平方根均匀分布（保证圆盘面积均匀）
-    r_sq = float(rng.uniform(0.0, cfg.GEN_N_CYLINDER_RADIUS_ANG ** 2))
-    n_radius_t = float(np.sqrt(r_sq / (cfg.GEN_N_CYLINDER_RADIUS_ANG ** 2)))
-    
-    # - 方位角：[0, 2π)
-    n_angle_t = float(rng.uniform(0.0, 2.0 * np.pi))
-    
-    # C5 球体采样参数
-    # 在单位球内均匀采样，然后缩放到 GEN_C5_SPHERE_RADIUS_ANG
-    # 使用标准的球面坐标均匀采样
-    c5_r_sq = float(rng.uniform(0.0, cfg.GEN_C5_SPHERE_RADIUS_ANG ** 3))
-    c5_r = float(np.cbrt(c5_r_sq))
-    c5_theta = float(np.arccos(rng.uniform(-1.0, 1.0)))
-    c5_phi = float(rng.uniform(0.0, 2.0 * np.pi))
-    
-    c5_offset = c5_r * np.array([
-        np.sin(c5_theta) * np.cos(c5_phi),
-        np.sin(c5_theta) * np.sin(c5_phi),
-        np.cos(c5_theta)
-    ], dtype=np.float64)
-    
-    return SampledDOF(
-        n_center=n_base.copy(),
-        n_radius_t=n_radius_t,
-        n_angle_t=n_angle_t,
-        c5_offset=c5_offset,
+    n_offset = _sample_truncated_isotropic(
+        rng, cfg.GEN_N_ISO_SIGMA_ANG, cfg.GEN_N_ISO_MAX_RADIUS_ANG
     )
+
+    if float(rng.random()) < cfg.GEN_C5_LOCAL_ISO_PROB:
+        c5_offset = _sample_truncated_isotropic(
+            rng, cfg.GEN_C5_LOCAL_ISO_SIGMA_ANG, cfg.GEN_C5_LOCAL_MAX_RADIUS_ANG
+        )
+    else:
+        basis = _reference_sampling_basis()
+        a1 = float(np.clip(
+            rng.normal(cfg.GEN_C5_MAIN_MEAN_ANG, cfg.GEN_C5_MAIN_SIGMA_ANG),
+            cfg.GEN_C5_MAIN_MIN_ANG,
+            cfg.GEN_C5_MAIN_MAX_ANG,
+        ))
+        a2 = float(rng.normal(0.0, cfg.GEN_C5_PERP_SIGMA_ANG))
+        a3 = float(rng.normal(0.0, cfg.GEN_C5_NORMAL_SIGMA_ANG))
+        c5_offset = (
+            a1 * basis["c5_e1"]
+            + a2 * basis["c5_e2"]
+            + a3 * basis["c5_e3"]
+        ).astype(np.float64)
+        n = float(np.linalg.norm(c5_offset))
+        if n > cfg.GEN_C5_TOTAL_MAX_RADIUS_ANG and n > 1e-12:
+            c5_offset *= cfg.GEN_C5_TOTAL_MAX_RADIUS_ANG / n
+
+    return SampledDOF(n_offset=n_offset, c5_offset=c5_offset)
 
 
 def generate_backbone_near_equil(rng: np.random.Generator,
@@ -203,9 +308,9 @@ def generate_backbone_near_equil(rng: np.random.Generator,
     """
     直接生成近平衡态骨架（Franck-Condon 区域）。
 
-    在基态坐标基础上，对 N3 和 C5 各加 Gaussian 扰动（sigma=max_disp/3 Å），
-    N3 的面外偏移从 [0, GEN_N_CYLINDER_OFF_PLANE_ANG] 均匀采样，
-    允许生成真正的近基态结构（off_plane ≈ 0 → N-C5 ≈ 1.45 Å）。
+    在基态坐标基础上，对 N3 和 C5 各加小幅 Gaussian 扰动
+    （sigma=max_disp/3 Å），用于补充靠近平衡态的训练样本。
+    这里不再使用旧的圆柱/球采样参数，也不强加方向先验。
 
     返回：7x3 骨架坐标（Å）
     """
@@ -280,73 +385,25 @@ def generate_backbone_coords_from_dof(
     min_h: float = 0.0,
 ) -> np.ndarray:
     """
-    根据新采样策略生成 7x3 骨架坐标：
+    根据当前主线采样自由度生成 7x3 骨架坐标：
     - 固定：O7、C1/C2/C4/C6
-    - 生成：N3（圆柱约束）、C5（球体约束）
-    
-    采样策略（2026/3/12）：
-    1. N3：在 NO 中轴面上离中轴面 GEN_N_CYLINDER_OFF_PLANE_ANG，
-       以原坐标为圆心、半径 GEN_N_CYLINDER_RADIUS_ANG 的圆柱内均匀随机采样。
-    2. C5：以原坐标为圆心、半径 GEN_C5_SPHERE_RADIUS_ANG 的球体内均匀随机采样。
-    
-    采样后限制：N-O 键长 < C2-O 键长，不满足则抛异常（由外层逻辑重采样）。
+    - 生成：N3（小范围各向同性）、C5（偏置椭球/局部各向同性）
     """
     base_coords = np.asarray(base_coords, dtype=np.float64)
     coords = base_coords.copy()
 
     iO = cfg.NMM_ATOM_INDEX["O7"]
-    iC2 = cfg.NMM_ATOM_INDEX["C2"]
     iN = cfg.NMM_ATOM_INDEX["N3"]
     iC5 = cfg.NMM_ATOM_INDEX["C5"]
-    iC1 = cfg.NMM_ATOM_INDEX["C1"]
-    iC4 = cfg.NMM_ATOM_INDEX["C4"]
 
     O = coords[iO]
-    C2 = coords[iC2]
-    C1 = coords[iC1]
-    C4 = coords[iC4]
     N_base = coords[iN]
     C5_base = coords[iC5]
 
-    # ========== N3 圆柱采样 ==========
-    # 定义 NO 中轴面：
-    # - 以 O 为原点
-    # - 中轴线指向 N（基态）
-    # - 平面由 N 和 C1/C4（平面原子）定义
-    
-    # 中轴线方向（从 O 指向基态 N）
-    no_axis = unit(N_base - O)
-    
-    # 平面法向（用 C1-O 和 C4-O 叉积定义；这是固定平面，不依赖采样的 N）
-    v1 = unit(C1 - O)
-    v2 = unit(C4 - O)
-    plane_normal = unit(np.cross(v1, v2))
-    
-    # 圆柱采样参数
-    r_cyl = cfg.GEN_N_CYLINDER_RADIUS_ANG * np.sqrt(dof.n_radius_t)  # 径向半径
-    theta = dof.n_angle_t  # 方位角
-    
-    # 圆柱内的方向向量（垂直于 NO 轴）
-    # 构造垂直于 no_axis 的两个正交向量：v_perp1, v_perp2
-    v_perp1 = unit(np.cross(no_axis, plane_normal))
-    v_perp2 = unit(np.cross(no_axis, v_perp1))
-    
-    # 圆柱坐标系内的径向位置
-    cyl_radial = r_cyl * (np.cos(theta) * v_perp1 + np.sin(theta) * v_perp2)
-    
-    # N 的位置：O + 沿中轴线偏移 + 径向偏移 + 离平面偏移
-    # 沿中轴线：取基态 N 到 O 的距离作为默认偏移
-    n_axial_offset = float(np.linalg.norm(N_base - O))
-    n_candidate_center = O + n_axial_offset * no_axis + cyl_radial
-    
-    # 离平面偏移：GEN_N_CYLINDER_OFF_PLANE_ANG（可正可负）
-    off_plane = cfg.GEN_N_CYLINDER_OFF_PLANE_ANG * plane_normal
-    N = n_candidate_center + off_plane
-    
-    coords[iN] = N
+    N = N_base + np.asarray(dof.n_offset, dtype=np.float64)
+    C5 = C5_base + np.asarray(dof.c5_offset, dtype=np.float64)
 
-    # ========== C5 球体采样 ==========
-    C5 = C5_base + dof.c5_offset
+    coords[iN] = N
     coords[iC5] = C5
     
     # ========== 采样后的键长约束检查 ==========
@@ -511,7 +568,13 @@ def smooth_moving_average(x: np.ndarray, window: int) -> np.ndarray:
     return np.convolve(xp, k, mode="valid")
 
 
-def add_noise(signal: np.ndarray, rng: np.random.Generator, s: np.ndarray = cfg.S_GRID) -> np.ndarray:
+def add_noise(
+    signal: np.ndarray,
+    rng: np.random.Generator,
+    s: np.ndarray = cfg.S_GRID,
+    noise_profile: np.ndarray | None = None,
+    noise_profile_scale_range: tuple[float, float] = (0.8, 1.2),
+) -> np.ndarray:
     """
     叠加噪声（可在 config.py 开关与调量级）
     """
@@ -520,13 +583,22 @@ def add_noise(signal: np.ndarray, rng: np.random.Generator, s: np.ndarray = cfg.
 
     y = signal.astype(np.float64).copy()
 
-    # 1) 高斯噪声（可随 s 衰减）
-    std = float(rng.uniform(*cfg.NOISE_GAUSS_STD_RANGE))
-    if cfg.NOISE_GAUSS_SCALE_WITH_S:
-        scale = 1.0 / (s + 0.5)  # 避免 s=0 发散
-        y += rng.normal(0.0, std, size=y.shape) * scale
+    # 1) 高斯噪声（主线 joint-train 可使用实验经验包络）
+    if noise_profile is not None:
+        profile = np.asarray(noise_profile, dtype=np.float64)
+        if profile.shape != y.shape:
+            raise ValueError(
+                f"noise_profile shape mismatch: got {profile.shape}, expected {y.shape}"
+            )
+        amp = float(rng.uniform(*noise_profile_scale_range))
+        y += rng.normal(0.0, 1.0, size=y.shape) * profile * amp
     else:
-        y += rng.normal(0.0, std, size=y.shape)
+        std = float(rng.uniform(*cfg.NOISE_GAUSS_STD_RANGE))
+        if cfg.NOISE_GAUSS_SCALE_WITH_S:
+            scale = 1.0 / (s + 0.5)  # 避免 s=0 发散
+            y += rng.normal(0.0, std, size=y.shape) * scale
+        else:
+            y += rng.normal(0.0, std, size=y.shape)
 
     # 2) 低频漂移
     if cfg.NOISE_DRIFT_ENABLE:
@@ -550,12 +622,13 @@ def add_noise(signal: np.ndarray, rng: np.random.Generator, s: np.ndarray = cfg.
 
 def label_names_for_dim(dim: int) -> List[str]:
     """
-    返回指定输出维度对应的标签名。
-    7 维是当前主线；3/9 维仅用于 legacy checkpoint 的兼容读取。
+    返回当前主线的标签名。
     """
-    if dim in cfg.LEGACY_LABEL_NAME_MAP:
-        return list(cfg.LEGACY_LABEL_NAME_MAP[dim])
-    raise ValueError(f"unsupported label dim: {dim}")
+    if dim != cfg.LABEL_FLAT_DIM:
+        raise ValueError(
+            f"V2_last only supports {cfg.LABEL_FLAT_DIM} labels, got {dim}"
+        )
+    return list(cfg.LABEL_PAIR_NAMES)
 
 
 def legacy_matrix3_label_from_backbone(backbone_7x3: np.ndarray) -> np.ndarray:
@@ -571,8 +644,9 @@ def legacy_matrix3_label_from_backbone(backbone_7x3: np.ndarray) -> np.ndarray:
 
 def label_from_backbone(backbone_7x3: np.ndarray) -> np.ndarray:
     """
-    返回当前主线的 7 维距离标签：
-    [d(O-N), d(O-C5), d(N-C5), d(N-C2), d(N-C4), d(C5-C2), d(C5-C4)]
+    返回当前主线的 8 维标签：
+    [d(O-N), d(O-C5), d(N-C5), d(N-C2), d(N-C4), d(C5-C2), d(C5-C4), h_C5_signed]
+    其中 h_C5_signed 为 C5 到刚性环平面（C1/C2/C4/C6 best-fit plane）的有符号距离。
     """
     iO  = cfg.NMM_ATOM_INDEX["O7"]
     iN  = cfg.NMM_ATOM_INDEX["N3"]
@@ -587,7 +661,27 @@ def label_from_backbone(backbone_7x3: np.ndarray) -> np.ndarray:
     d_NC4  = float(np.linalg.norm(coords[iN]  - coords[iC4]))
     d_C5C2 = float(np.linalg.norm(coords[iC5] - coords[iC2]))
     d_C5C4 = float(np.linalg.norm(coords[iC5] - coords[iC4]))
-    return np.array([d_ON, d_OC5, d_NC5, d_NC2, d_NC4, d_C5C2, d_C5C4], dtype=np.float32)
+    iC1 = cfg.NMM_ATOM_INDEX["C1"]
+    iC6 = cfg.NMM_ATOM_INDEX["C6"]
+    ring = np.stack([coords[iC1], coords[iC2], coords[iC4], coords[iC6]], axis=0).astype(np.float64)
+    centroid = ring.mean(axis=0)
+    _u, _s, vh = np.linalg.svd(ring - centroid, full_matrices=False)
+    normal = vh[-1]
+    n = float(np.linalg.norm(normal))
+    if n < 1e-12:
+        h_c5_signed = 0.0
+    else:
+        normal = normal / n
+        eq_coords = np.asarray(cfg.NMM_BASE_COORDS_ANG, dtype=np.float64)
+        eq_ring = np.stack([eq_coords[iC1], eq_coords[iC2], eq_coords[iC4], eq_coords[iC6]], axis=0)
+        eq_centroid = eq_ring.mean(axis=0)
+        _u_eq, _s_eq, vh_eq = np.linalg.svd(eq_ring - eq_centroid, full_matrices=False)
+        eq_normal = vh_eq[-1]
+        eq_sign = float(np.dot(eq_coords[iC5] - eq_centroid, eq_normal))
+        if eq_sign < 0:
+            normal = -normal
+        h_c5_signed = float(np.dot(coords[iC5] - centroid, normal))
+    return np.array([d_ON, d_OC5, d_NC5, d_NC2, d_NC4, d_C5C2, d_C5C4, h_c5_signed], dtype=np.float32)
 
 
 def equilibrium_labels_for_dim(dim: int) -> np.ndarray:
@@ -595,14 +689,11 @@ def equilibrium_labels_for_dim(dim: int) -> np.ndarray:
     从当前 config 中的基态坐标显式计算“平衡距离”。
     所有评估/绘图都应调用这里，避免把坐标分量误当作距离。
     """
-    main = label_from_backbone(cfg.NMM_BASE_COORDS_ANG)
-    if dim == 7:
-        return main
-    if dim == 3:
-        return main[:3]
-    if dim == 9:
-        return legacy_matrix3_label_from_backbone(cfg.NMM_BASE_COORDS_ANG)
-    raise ValueError(f"unsupported label dim: {dim}")
+    if dim != cfg.LABEL_FLAT_DIM:
+        raise ValueError(
+            f"V2_last only supports {cfg.LABEL_FLAT_DIM} labels, got {dim}"
+        )
+    return label_from_backbone(cfg.NMM_BASE_COORDS_ANG)
 
 
 # ============================================================
@@ -706,7 +797,7 @@ class InMemoryDataset(torch.utils.data.Dataset):
         print(f"[data] Loading {h5_path} into memory...", flush=True)
         with h5py.File(h5_path, "r") as h5f:
             self.x = torch.from_numpy(np.array(h5f["x"])).float()  # (N, S)
-            self.y = torch.from_numpy(np.array(h5f["y"])).float()  # (N, 9)
+            self.y = torch.from_numpy(np.array(h5f["y"])).float()  # (N, 7)
         print(f"[data] Loaded {self.x.shape[0]} samples, x={self.x.shape}, y={self.y.shape}", flush=True)
 
     def __len__(self) -> int:
@@ -738,7 +829,7 @@ class ResidualBlock1D(nn.Module):
 class NMMRegressor1D(nn.Module):
     """
     旧版模型（保留用于加载已有 checkpoint）。
-    输入 (B,1,S=681), 输出 (B,9)
+    输入 (B,1,S), 输出 (B,7)
     """
 
     def __init__(self, base_ch: int = 64, n_blocks: int = 6, out_dim: int = cfg.LABEL_FLAT_DIM):
@@ -829,7 +920,7 @@ class MultiScaleStem(nn.Module):
 class NMMRegressorV2(nn.Module):
     """
     改进版模型：多尺度stem + SE残差块 + 渐进下采样 + 更大MLP head
-    输入 (B,1,S=681), 输出 (B,9)
+    输入 (B,1,S), 输出 (B,7)
     """
 
     def __init__(self, base_ch: int = 128, n_blocks: int = 8, out_dim: int = cfg.LABEL_FLAT_DIM):

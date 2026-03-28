@@ -1,5 +1,5 @@
 """
-训练 1D 回归网络（V2_last 主线默认：V2 + 7 labels + 截断输入）
+训练 1D 回归网络（V2_last 主线默认：V2 + 8 labels + 截断输入）
 
 支持 V1/V2/V3 三种模型，但默认只推荐 V2。
 
@@ -41,8 +41,8 @@ def load_and_normalize(h5_path: Path, norm: fn.Normalization, max_samples: int |
     y_n = fn.normalize_y(y, norm).astype(np.float32)
 
     x_t = torch.from_numpy(x_n).unsqueeze(1)  # (N, 1, S)
-    y_t = torch.from_numpy(y_n)               # (N, 9)
-    y_raw_t = torch.from_numpy(y)              # (N, 9)
+    y_t = torch.from_numpy(y_n)               # (N, D)
+    y_raw_t = torch.from_numpy(y)             # (N, D)
 
     log(f"[data]   normalized, tensor shapes: x={x_t.shape}, y={y_t.shape}")
     return TensorDataset(x_t, y_t), y_raw_t
@@ -65,6 +65,20 @@ def load_exp_dataset(h5_path: Path, norm: fn.Normalization):
     prepump_t = torch.from_numpy(is_prepump)
     log(f"[exp]   normalized tensor shape: x={x_t.shape}")
     return TensorDataset(x_t, time_t, prepump_t)
+
+
+def evaluate_loader_mae(model, loader, y_raw: torch.Tensor, norm: fn.Normalization,
+                        device: torch.device) -> tuple[float, np.ndarray]:
+    preds = []
+    with torch.no_grad():
+        for xb, _yb in loader:
+            xb = xb.to(device)
+            preds.append(model(xb).cpu())
+    pred_n = torch.cat(preds, dim=0).numpy()
+    pred_real = fn.denormalize_y(pred_n, norm)
+    y_true = y_raw.numpy()
+    err = np.abs(pred_real - y_true)
+    return float(err.mean()), err.mean(axis=0)
 
 
 def save_inference_ckpt(path: Path, model, args, norm: fn.Normalization):
@@ -191,6 +205,14 @@ def main():
                     help="实验 pre-pump bootstrap consistency 损失权重")
     ap.add_argument("--balanced_exp_weight", type=float, default=0.8,
                     help="balanced checkpoint score = val_mae + w * exp_dev")
+    ap.add_argument("--joint_exp_h5", type=str, default=None,
+                    help="joint-train: 实验 pre-pump 训练 h5（含 y=equilibrium）")
+    ap.add_argument("--joint_exp_holdout_h5", type=str, default=None,
+                    help="joint-train: 实验 pre-pump holdout h5（仅评估，不参与训练）")
+    ap.add_argument("--joint_exp_batch_size", type=int, default=4,
+                    help="每个 synthetic batch 额外混入的 experimental 样本数")
+    ap.add_argument("--save_each_epoch_dir", type=str, default=None,
+                    help="若提供，则每个 epoch 额外保存一个可推理 checkpoint 到该目录")
     args = ap.parse_args()
 
     fn.set_global_seed(args.seed)
@@ -212,6 +234,9 @@ def main():
 
     dl_exp = None
     dl_exp_eval = None
+    dl_joint_exp = None
+    dl_joint_holdout = None
+    y_joint_holdout_raw = None
     eq_real = fn.equilibrium_labels_for_dim(cfg.LABEL_FLAT_DIM).astype(np.float32)
     eq_norm = fn.normalize_y(eq_real[None, :], norm).astype(np.float32)[0]
     eq_target = torch.from_numpy(eq_norm).float().to(device)
@@ -223,6 +248,29 @@ def main():
                                  num_workers=0, pin_memory=False)
         log(f"[exp] train/eval samples={len(ds_exp)}  lambda_eq={args.lambda_exp_eq} "
             f"lambda_cons={args.lambda_exp_cons}")
+
+    if args.joint_exp_h5:
+        ds_joint_exp, _y_joint_exp_raw = load_and_normalize(Path(args.joint_exp_h5), norm)
+        dl_joint_exp = DataLoader(
+            ds_joint_exp,
+            batch_size=args.joint_exp_batch_size,
+            shuffle=True,
+            num_workers=0,
+            pin_memory=False,
+            drop_last=False,
+        )
+        log(f"[joint_exp] train samples={len(ds_joint_exp)} batch={args.joint_exp_batch_size}")
+
+    if args.joint_exp_holdout_h5:
+        ds_joint_holdout, y_joint_holdout_raw = load_and_normalize(Path(args.joint_exp_holdout_h5), norm)
+        dl_joint_holdout = DataLoader(
+            ds_joint_holdout,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=0,
+            pin_memory=False,
+        )
+        log(f"[joint_exp] holdout samples={len(ds_joint_holdout)}")
 
     if args.model_version == "v3":
         model = fn.NMMRegressorV3(base_ch=args.base_ch, n_blocks=args.n_blocks,
@@ -288,6 +336,10 @@ def main():
     if cfg.LABEL_FLAT_DIM == 3:
         # 3-dim: [O-N, O-C5, N-C5]，N-C5 变化范围最大加权
         loss_weights = torch.tensor([1.0, 1.0, 2.0], dtype=torch.float32, device=device)
+    elif cfg.LABEL_FLAT_DIM == 8:
+        # 8-dim: 7 个距离 + h_C5_signed
+        loss_weights = torch.tensor([1.0, 1.0, 2.5, 1.5, 1.5, 3.0, 3.0, 2.0],
+                                    dtype=torch.float32, device=device)
     else:
         # 7-dim: [O-N, O-C5, N-C5, N-C2, N-C4, C5-C2, C5-C4]
         # C5-C2/C5-C4 权重提高以改善 C5 重建精度
@@ -302,11 +354,15 @@ def main():
     resume_ckpt = out_ckpt.with_suffix(".resume.pt")
     expbest_ckpt = out_ckpt.with_name(out_ckpt.stem + "_expbest.pt")
     balanced_ckpt = out_ckpt.with_name(out_ckpt.stem + "_balanced.pt")
+    epoch_ckpt_dir = Path(args.save_each_epoch_dir) if args.save_each_epoch_dir else None
+    if epoch_ckpt_dir is not None:
+        epoch_ckpt_dir.mkdir(parents=True, exist_ok=True)
     best_exp_dev = float("inf")
     best_balanced_score = float("inf")
 
     log("[train] Starting training loop...")
     exp_iter = iter(dl_exp) if dl_exp is not None else None
+    joint_exp_iter = iter(dl_joint_exp) if dl_joint_exp is not None else None
     for ep in range(start_epoch, args.epochs + 1):
         t0 = time.time()
         model.train()
@@ -318,6 +374,11 @@ def main():
         for batch_idx, (xb, yb) in enumerate(dl_tr, 1):
             xb = xb.to(device)
             yb = yb.to(device)
+
+            if dl_joint_exp is not None:
+                (xe, ye), joint_exp_iter = next_or_restart(joint_exp_iter, dl_joint_exp)
+                xb = torch.cat([xb, xe.to(device)], dim=0)
+                yb = torch.cat([yb, ye.to(device)], dim=0)
 
             # Mixup augmentation
             if args.mixup_alpha > 0.0:
@@ -398,12 +459,18 @@ def main():
         exp_dev = None
         exp_key_dev = None
         exp_per_dim = None
+        joint_holdout_dev = None
+        joint_holdout_per_dim = None
         balanced_score = None
         if dl_exp_eval is not None:
             exp_dev, exp_key_dev, exp_per_dim = evaluate_exp_prepump(
                 model, dl_exp_eval, norm, device, eq_real
             )
             balanced_score = val_mae + args.balanced_exp_weight * exp_dev
+        if dl_joint_holdout is not None and y_joint_holdout_raw is not None:
+            joint_holdout_dev, joint_holdout_per_dim = evaluate_loader_mae(
+                model, dl_joint_holdout, y_joint_holdout_raw, norm, device
+            )
 
         improved = ""
         if val_mae < best_val_mae:
@@ -434,6 +501,8 @@ def main():
         if exp_dev is not None:
             exp_metric_str = (f" | exp_dev={exp_dev:.4f}A exp_key={exp_key_dev:.4f}A"
                               f" bal={balanced_score:.4f}")
+        if joint_holdout_dev is not None:
+            exp_metric_str += f" | exp_holdout={joint_holdout_dev:.4f}A"
         log(f"[ep {ep:03d}/{args.epochs}] train_loss={tr_loss:.6f}{exp_loss_str} | "
             f"val_mse={val_mse:.6f} val_mae={val_mae:.4f}A key_mae={key_mae:.4f}A{exp_metric_str} | "
             f"{dim_str} | {dt:.1f}s{improved}")
@@ -442,6 +511,10 @@ def main():
         save_resume_ckpt(resume_ckpt, model, opt, scheduler, ep,
                          best_val_mae, patience_counter, global_step, args)
         log(f"[train] resume ckpt saved -> {resume_ckpt.name}")
+        if epoch_ckpt_dir is not None:
+            epoch_ckpt = epoch_ckpt_dir / f"epoch_{ep:03d}.pt"
+            save_inference_ckpt(epoch_ckpt, model, args, norm)
+            log(f"[train] epoch ckpt saved -> {epoch_ckpt}")
 
         if patience_counter >= args.patience:
             log(f"[train] Early stopping at epoch {ep} (patience={args.patience})")

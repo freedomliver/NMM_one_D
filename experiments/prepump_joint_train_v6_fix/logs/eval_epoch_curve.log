@@ -1,0 +1,91 @@
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_001.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 001] prepump7=0.014491 key7=0.020842 span(N-C5)=1.2662
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_002.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 002] prepump7=0.033159 key7=0.037151 span(N-C5)=1.1177
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_003.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 003] prepump7=0.016530 key7=0.017513 span(N-C5)=1.4625
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_004.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 004] prepump7=0.010850 key7=0.008057 span(N-C5)=1.2393
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_005.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 005] prepump7=0.017923 key7=0.019594 span(N-C5)=1.2090
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_006.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 006] prepump7=0.019685 key7=0.019281 span(N-C5)=1.2005
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_007.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 007] prepump7=0.009908 key7=0.006700 span(N-C5)=1.2493
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_008.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 008] prepump7=0.006444 key7=0.007864 span(N-C5)=1.1926
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_009.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 009] prepump7=0.005798 key7=0.005798 span(N-C5)=1.0765
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_010.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 010] prepump7=0.004209 key7=0.005013 span(N-C5)=0.9221
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_011.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 011] prepump7=0.010884 key7=0.013634 span(N-C5)=0.8507
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_012.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 012] prepump7=0.005989 key7=0.007150 span(N-C5)=1.0105
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_013.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 013] prepump7=0.002300 key7=0.003176 span(N-C5)=0.8743
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_014.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 014] prepump7=0.002836 key7=0.003557 span(N-C5)=0.8627
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_015.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 015] prepump7=0.005775 key7=0.005926 span(N-C5)=0.8099
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_016.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 016] prepump7=0.003017 key7=0.004059 span(N-C5)=0.7258
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_017.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 017] prepump7=0.001714 key7=0.001972 span(N-C5)=0.6097
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_018.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 018] prepump7=0.001529 key7=0.001464 span(N-C5)=0.5927
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_019.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 019] prepump7=0.001749 key7=0.001673 span(N-C5)=0.7198
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_020.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 020] prepump7=0.001089 key7=0.001573 span(N-C5)=0.6663
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_021.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 021] prepump7=0.001220 key7=0.000789 span(N-C5)=0.6327
+[load_model] V2 loaded from experiments/prepump_joint_train_v6_fix/epoch_ckpts/epoch_022.pt (out_dim=8, input_len=431)
+[load] 200 bootstrap × 45 time pts × 637 s-pts
+[calib] alpha override=0.01500  pre_pump_residual_std=0.0283
+[epoch 022] prepump7=0.000811 key7=0.000775 span(N-C5)=0.6682
+[saved] csv -> experiments/prepump_joint_train_v6_fix/epoch_vs_exp_quality.csv
+[saved] times csv -> experiments/prepump_joint_train_v6_fix/epoch_vs_exp_quality_all_times.csv
+[saved] png -> experiments/prepump_joint_train_v6_fix/figures/epoch_vs_exp_quality.png
